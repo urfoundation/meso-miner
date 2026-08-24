@@ -158,23 +158,17 @@ if [ -z "$outfile" ]; then
     exit 0
 fi
 
+# Single-source download: github is the only host; no mirror retry.
 case "$url" in
-    *dl.fullbars.xyz*)
+    *github.com*)
         if [ "${MOCK_PRIMARY_FAIL:-0}" = "1" ]; then
             # Simulate a partial/truncated download: real curl can write
             # bytes to -o before the transfer dies and it exits non-zero.
-            # This lets tests assert the mirror retry overwrites (not
-            # appends to) whatever primary already wrote to the same path.
             if [ -n "${MOCK_PRIMARY_PARTIAL_CONTENT:-}" ]; then
                 printf '%s' "$MOCK_PRIMARY_PARTIAL_CONTENT" > "$outfile"
             fi
             exit 22
         fi
-        printf '%s' "${MOCK_TARBALL_CONTENT:-dummy-tarball-bytes}" > "$outfile"
-        exit 0
-        ;;
-    *github.com*)
-        [ "${MOCK_MIRROR_FAIL:-0}" = "1" ] && exit 22
         printf '%s' "${MOCK_TARBALL_CONTENT:-dummy-tarball-bytes}" > "$outfile"
         exit 0
         ;;
@@ -323,7 +317,7 @@ test_primary_success() {
     before="$(snapshot_tmp_artifacts)"
 
     MOCK_VERSION="v9.9.9-mock-1"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-mock-1/urnetwork-linux-amd64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-mock-1/urnetwork-linux-amd64.tar.gz"
     MOCK_PRIMARY_FAIL=0
     unset ec
     run_update
@@ -357,43 +351,28 @@ test_primary_success
 echo ""
 echo "=== SECTION 2: Primary fails, mirror succeeds ==="
 
-test_mirror_fallback_success() {
+test_download_fail_no_fallback() {
     reset_fixture
     before="$(snapshot_tmp_artifacts)"
 
     MOCK_VERSION="v9.9.9-mock-2"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-mock-2/urnetwork-linux-amd64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-mock-2/urnetwork-linux-amd64.tar.gz"
     MOCK_PRIMARY_FAIL=1
-    MOCK_MIRROR_FAIL=0
     unset ec
     run_update
 
-    assert_exit_code "0" "$ec" "Mirror fallback: update exits 0"
+    assert_exit_code "1" "$ec" "Download fail: update exits 1"
 
     n_o_calls="$(grep -c -- ' -o ' "$CURL_LOG")"
-    assert_eq "2" "$n_o_calls" "Mirror fallback: both primary and mirror downloads were attempted"
-
-    tarball_paths_unique="$(extract_tarball_paths "$CURL_LOG" | sort -u)"
-    assert_eq "1" "$(printf '%s\n' "$tarball_paths_unique" | wc -l | tr -d ' ')" \
-        "Mirror fallback: primary and mirror attempts reuse the same tarball path"
-    assert_matches "$tarball_paths_unique" "$TARBALL_PATTERN" "Mirror fallback: reused tarball path matches mktemp pattern"
-    assert_file_absent "$tarball_paths_unique" "Mirror fallback: tarball removed after successful update"
-
-    provider_bin="$APP_DIR/urnetwork_amd64_stable"
-    if [ -x "$provider_bin" ]; then
-        echo "  ✅ PASS: Mirror fallback: provider binary installed and executable"
-    else
-        echo "  ❌ FAIL: Mirror fallback: provider binary missing at $provider_bin"
-        FAILS=$((FAILS + 1))
-    fi
+    assert_eq "1" "$n_o_calls" "Download fail: exactly ONE download attempt (no mirror retry)"
 
     after="$(snapshot_tmp_artifacts)"
-    assert_eq "$before" "$after" "Mirror fallback: no leaked urnetwork-update-* artifacts under /tmp"
+    assert_eq "$before" "$after" "Download fail: no leaked urnetwork-update-* artifacts under /tmp"
 }
-test_mirror_fallback_success
+test_download_fail_no_fallback
 
 # ============================================================================
-# SECTION 3: Both primary and mirror downloads fail
+# SECTION 3: Single download attempt fails cleanly
 # ============================================================================
 echo ""
 echo "=== SECTION 3: Both downloads fail ==="
@@ -403,16 +382,15 @@ test_both_downloads_fail() {
     before="$(snapshot_tmp_artifacts)"
 
     MOCK_VERSION="v9.9.9-mock-3"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-mock-3/urnetwork-linux-amd64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-mock-3/urnetwork-linux-amd64.tar.gz"
     MOCK_PRIMARY_FAIL=1
-    MOCK_MIRROR_FAIL=1
     unset ec
     run_update
 
-    assert_exit_code "1" "$ec" "Both downloads fail: update exits 1"
+    assert_exit_code "1" "$ec" "Download fail: update exits 1"
 
     n_o_calls="$(grep -c -- ' -o ' "$CURL_LOG")"
-    assert_eq "2" "$n_o_calls" "Both downloads fail: both primary and mirror attempted"
+    assert_eq "1" "$n_o_calls" "Download fail: exactly ONE download attempt (no mirror retry)"
 
     tarball_path="$(extract_tarball_paths "$CURL_LOG" | sort -u | head -n1)"
     assert_matches "$tarball_path" "$TARBALL_PATTERN" "Both downloads fail: tarball path recorded matches mktemp pattern"
@@ -434,7 +412,7 @@ test_extraction_fails() {
     before="$(snapshot_tmp_artifacts)"
 
     MOCK_VERSION="v9.9.9-mock-4"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-mock-4/urnetwork-linux-amd64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-mock-4/urnetwork-linux-amd64.tar.gz"
     MOCK_PRIMARY_FAIL=0
     MOCK_TAR_FAIL=1
     unset ec
@@ -461,7 +439,7 @@ test_provider_missing_in_tarball() {
     before="$(snapshot_tmp_artifacts)"
 
     MOCK_VERSION="v9.9.9-mock-5"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-mock-5/urnetwork-linux-amd64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-mock-5/urnetwork-linux-amd64.tar.gz"
     MOCK_PRIMARY_FAIL=0
     MOCK_TAR_NO_PROVIDER=1
     unset ec
@@ -489,7 +467,7 @@ echo "=== SECTION 6: Tarball filename is unique per run (not the old fixed name)
 test_tarball_name_is_unpredictable() {
     reset_fixture
     MOCK_VERSION="v9.9.9-mock-6a"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-mock-6a/urnetwork-linux-amd64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-mock-6a/urnetwork-linux-amd64.tar.gz"
     MOCK_PRIMARY_FAIL=1
     MOCK_MIRROR_FAIL=1
     unset ec
@@ -498,7 +476,7 @@ test_tarball_name_is_unpredictable() {
 
     reset_fixture
     MOCK_VERSION="v9.9.9-mock-6b"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-mock-6b/urnetwork-linux-amd64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-mock-6b/urnetwork-linux-amd64.tar.gz"
     MOCK_PRIMARY_FAIL=1
     MOCK_MIRROR_FAIL=1
     unset ec
@@ -543,7 +521,7 @@ run_idle_update() {
 test_idle_update_window_zero() {
     reset_fixture
     MOCK_VERSION="v9.9.9-idle-1"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-idle-1/urnetwork-linux-amd64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-idle-1/urnetwork-linux-amd64.tar.gz"
     MOCK_PRIMARY_FAIL=0
     unset ec
     run_idle_update
@@ -577,7 +555,7 @@ test_idle_update_custom_threshold() {
     printf '50\n' > "$HEALTH_DIR/billable_rate"
 
     MOCK_VERSION="v9.9.9-idle-2"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-idle-2/urnetwork-linux-amd64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-idle-2/urnetwork-linux-amd64.tar.gz"
     MOCK_PRIMARY_FAIL=0
     unset ec
     out="$(
@@ -615,7 +593,7 @@ test_zero_byte_tarball_fails_cleanly() {
     before="$(snapshot_tmp_artifacts)"
 
     MOCK_VERSION="v9.9.9-mock-9"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-mock-9/urnetwork-linux-amd64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-mock-9/urnetwork-linux-amd64.tar.gz"
     MOCK_PRIMARY_FAIL=0
     MOCK_TARBALL_CONTENT=""
     # A 0-byte/truncated archive is exactly what a real tar would reject;
@@ -639,57 +617,39 @@ test_zero_byte_tarball_fails_cleanly() {
 test_zero_byte_tarball_fails_cleanly
 
 echo ""
-echo "=== SECTION 9b: Partial primary download is overwritten by mirror ==="
+echo "=== SECTION 9b: Failed download leaves no partial file at tarball path ==="
 
-test_partial_primary_overwritten_by_mirror() {
+test_failed_download_cleans_up() {
     reset_fixture
     before="$(snapshot_tmp_artifacts)"
 
     MOCK_VERSION="v9.9.9-mock-9b"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-mock-9b/urnetwork-linux-amd64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-mock-9b/urnetwork-linux-amd64.tar.gz"
     MOCK_PRIMARY_FAIL=1
-    MOCK_MIRROR_FAIL=0
     # Primary writes a short garbage prefix to the shared tarball path
-    # before it fails; the mirror attempt must overwrite (not append to)
-    # that same path and still produce a valid update.
-    MOCK_PRIMARY_PARTIAL_CONTENT="garbage-partial-bytes-from-a-dropped-connection"
+    # before it fails; the failure path must still clean up the whole
+    # temp dir so nothing is left behind for the next run.
+    MOCK_PRIMARY_PARTIAL_CONTENT="partial-bytes"
     unset ec
     run_update
 
-    assert_exit_code "0" "$ec" "Partial primary: update still succeeds via mirror overwrite"
-    assert_matches "$out" "Primary download failed, trying GitHub mirror" "Partial primary: mirror fallback message shown"
+    assert_exit_code "1" "$ec" "Failed dl: update exits 1"
 
     n_o_calls="$(grep -c -- ' -o ' "$CURL_LOG")"
-    assert_eq "2" "$n_o_calls" "Partial primary: both primary and mirror attempted"
-
-    tarball_paths_unique="$(extract_tarball_paths "$CURL_LOG" | sort -u)"
-    assert_eq "1" "$(printf '%s\n' "$tarball_paths_unique" | wc -l | tr -d ' ')" \
-        "Partial primary: mirror reused the same tarball path primary partially wrote"
-
-    provider_bin="$APP_DIR/urnetwork_amd64_stable"
-    if [ -x "$provider_bin" ]; then
-        echo "  ✅ PASS: Partial primary: provider binary installed from mirror content"
-    else
-        echo "  ❌ FAIL: Partial primary: provider binary missing at $provider_bin"
-        FAILS=$((FAILS + 1))
-    fi
+    assert_eq "1" "$n_o_calls" "Failed dl: exactly ONE download attempt (no mirror retry)"
 
     after="$(snapshot_tmp_artifacts)"
-    assert_eq "$before" "$after" "Partial primary: no leaked artifacts under /tmp"
+    assert_eq "$before" "$after" "Failed dl: no leaked artifacts under /tmp"
 }
-test_partial_primary_overwritten_by_mirror
+test_failed_download_cleans_up
 
-# ============================================================================
-# SECTION 10: update-pending marker lifecycle
-# ============================================================================
-echo ""
 echo "=== SECTION 10: update-pending marker is created on success ==="
 
 test_marker_created_on_success() {
     reset_fixture
 
     MOCK_VERSION="v9.9.9-mock-10"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-mock-10/urnetwork-linux-amd64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-mock-10/urnetwork-linux-amd64.tar.gz"
     MOCK_PRIMARY_FAIL=0
     unset ec
     run_update
@@ -714,7 +674,7 @@ test_marker_removed_on_mv_failure() {
     before="$(snapshot_tmp_artifacts)"
 
     MOCK_VERSION="v9.9.9-mock-10b"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-mock-10b/urnetwork-linux-amd64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-mock-10b/urnetwork-linux-amd64.tar.gz"
     MOCK_PRIMARY_FAIL=0
 
     # Force `mv -f "$staged_provider" "$provider_bin"` to fail by removing
@@ -749,7 +709,7 @@ test_marker_dir_respects_custom_home() {
     MOCK_HOME="$CUSTOM_HOME"
 
     MOCK_VERSION="v9.9.9-mock-10c"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-mock-10c/urnetwork-linux-amd64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-mock-10c/urnetwork-linux-amd64.tar.gz"
     MOCK_PRIMARY_FAIL=0
     unset ec
     run_update
@@ -781,7 +741,7 @@ test_arch_x86_64_maps_to_amd64() {
     reset_fixture
     MOCK_ARCH=x86_64
     MOCK_VERSION="v9.9.9-mock-11a"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-mock-11a/urnetwork-linux-amd64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-mock-11a/urnetwork-linux-amd64.tar.gz"
     MOCK_PRIMARY_FAIL=0
     unset ec
     run_update
@@ -801,7 +761,7 @@ test_arch_aarch64_maps_to_arm64() {
     reset_fixture
     MOCK_ARCH=aarch64
     MOCK_VERSION="v9.9.9-mock-11b"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-mock-11b/urnetwork-linux-arm64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-mock-11b/urnetwork-linux-arm64.tar.gz"
     MOCK_PRIMARY_FAIL=0
     unset ec
     run_update
@@ -825,7 +785,7 @@ test_arch_unsupported_exits_before_side_effects() {
     before="$(snapshot_tmp_artifacts)"
     MOCK_ARCH="riscv64"
     MOCK_VERSION="v9.9.9-mock-11c"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-mock-11c/urnetwork-linux-riscv64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-mock-11c/urnetwork-linux-riscv64.tar.gz"
     unset ec
     run_update
 
@@ -855,7 +815,7 @@ test_mktemp_stub_catches_staged_provider_regression() {
     before="$(snapshot_tmp_artifacts)"
 
     MOCK_VERSION="v9.9.9-mock-12"
-    MOCK_DOWNLOAD_URL="https://github.com/full-bars/urnetwork-3.23-fix/releases/download/v9.9.9-mock-12/urnetwork-linux-amd64.tar.gz"
+    MOCK_DOWNLOAD_URL="https://github.com/urfoundation/meso-miner/releases/download/v9.9.9-mock-12/urnetwork-linux-amd64.tar.gz"
     MOCK_PRIMARY_FAIL=0
     unset ec
     RUN_SCRIPT="$REGRESSED_STAGED_SCRIPT" run_update

@@ -711,15 +711,15 @@ Usage:
         [--wallet=<coldkey_ss58>]
         [--max-memory=<mem>]
         [-v...]
-    provider wallet set <coldkey_ss58>
+    provider wallet set <coldkey_ss58>  [EXPERIMENTAL]
         [--api_url=<api_url>]
         [-v...]
-    provider claim [--epoch=<epoch>] [--rpc=<rpc_url>]... [--key_file=<key_file>] [--dry-run]
+    provider claim [--epoch=<epoch>] [--rpc=<rpc_url>]... [--key_file=<key_file>] [--dry-run]  [EXPERIMENTAL]
         [--api_url=<api_url>]
         [-v...]
-    provider bind-head --hotkey=<hex> --registrant=<registrant> --contract=<contract> [--rpc=<rpc_url>]... [--key_file=<key_file>] [--dry-run]
+    provider bind-head --hotkey=<hex> --registrant=<registrant> --contract=<contract> [--rpc=<rpc_url>]... [--key_file=<key_file>] [--dry-run]  [EXPERIMENTAL]
         [-v...]
-    provider unbind-head --hotkey=<hex> [--contract=<contract>] [--rpc=<rpc_url>]... [--key_file=<key_file>] [--dry-run]
+    provider unbind-head --hotkey=<hex> [--contract=<contract>] [--rpc=<rpc_url>]... [--key_file=<key_file>] [--dry-run]  [EXPERIMENTAL]
         [-v...]
     provider proxy auth add [<key>] <proxy_user> <proxy_password> [-f]
     provider proxy auth remove [<key>] [--all]
@@ -733,6 +733,7 @@ Usage:
     provider proxy remove-source <url>
     provider proxy exclude [<pattern>] [--remove]
     provider proxy summary
+    provider proxy trim <count> [--preview]
     provider logs [-n <lines>]
     provider print-network-id <file>
     provider choose_network <api_url> <connect_url>
@@ -765,6 +766,9 @@ Options:
     --key_file=<key_file>            EVM private key file. When given, claim/bind-head/unbind-head sign
                                      and submit the transaction (via --rpc); without it, the ready-to-submit
                                      calldata is printed for the offline/air-gapped snclaim path.
+                                     EXPERIMENTAL: the claim/bind-head/unbind-head/wallet-set commands are
+                                     experimental, the mechanism may change, and they are not recommended
+                                     for production use yet. Ported but not exercised against mainnet.
     --dry-run                        Build and sign the extrinsic but do not submit.
     --hotkey=<hex>                   Head-tier miner hotkey as a 0x-optional 32-byte hex account id.
     --registrant=<registrant>        The EVM address that will submit bindHead via snclaim (0x, 20 bytes).
@@ -787,6 +791,7 @@ Options:
                                      cache, and excludes the pattern from future URL fetches. See 'proxy exclude'.
     <pattern>                        Host substring for 'proxy exclude' (add). With --remove, deletes the pattern.
                                      With no pattern, 'proxy exclude' lists active patterns.
+    <count>                          Max number of running proxies to keep. The A-F worst-graded above it are shed. 0/off clears the cap.
     --force                          Bypass the 8-hour warmup protection gate.
     -n <lines>                       Number of lines to show from the end of the log [default: 0].`,
 		DefaultApiUrl,
@@ -837,6 +842,8 @@ Options:
 			proxyActivity()
 		} else if summary, _ := opts.Bool("summary"); summary {
 			proxySummary()
+		} else if trim, _ := opts.Bool("trim"); trim {
+			proxyTrim(opts)
 		}
 	} else if wallet, _ := opts.Bool("wallet"); wallet {
 		if set, _ := opts.Bool("set"); set {
@@ -1019,6 +1026,33 @@ func auth(opts docopt.Opts) {
 // for the whole window. "Clear" requires two consecutive healthy polls to avoid
 // premature all-clears during brief lulls mid-outage. A 5-minute per-event
 // cooldown prevents webhook spam if the backend flickers at a boundary.
+// alertWebhookOverridePath returns ~/.urnetwork/alert_webhook, the outage
+// watcher's equivalent of reportURLOverridePath: a file an operator can
+// write to set, change, or clear URNETWORK_ALERT_WEBHOOK without restarting
+// the provider.
+func alertWebhookOverridePath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".urnetwork", "alert_webhook"), nil
+}
+
+// resolveAlertWebhook mirrors resolveReportURL: the override file takes
+// precedence over envFallback (URNETWORK_ALERT_WEBHOOK captured at startup).
+// A readable-but-empty override file means "alerting off" and resolves to ""
+// so the outage watcher stops firing; only an unreadable file (missing,
+// permission error) falls back to the startup env value.
+func resolveAlertWebhook(envFallback string) string {
+	path, err := alertWebhookOverridePath()
+	if err == nil {
+		if b, err := os.ReadFile(path); err == nil {
+			return strings.TrimSpace(string(b))
+		}
+	}
+	return envFallback
+}
+
 func runOutageWatcher(ctx context.Context, nodeName, envWebhookURL string) {
 	const pollInterval = 30 * time.Second
 	const cooldown = 5 * time.Minute
@@ -1048,8 +1082,7 @@ func runOutageWatcher(ctx context.Context, nodeName, envWebhookURL string) {
 		}
 
 		// Re-resolve every tick so writing ~/.urnetwork/alert_webhook can
-		// turn outage alerting on, off, or repoint it without a restart —
-		// same reasoning as the hub report URL in bandwidth_reporter.go.
+		// turn outage alerting on, off, or repoint it without a restart.
 		if resolved := resolveAlertWebhook(envWebhookURL); resolved != webhookURL {
 			webhookURL = resolved
 			if webhookURL != "" {
@@ -1187,6 +1220,64 @@ func nextMidnight(t time.Time) time.Time {
 // the 1m, 5m, 15m, and 60m windows. Handles counter resets (proxy restart) by
 // treating a backwards counter as a zero-delta tick. Silent when no proxies are
 // registered (non-proxy mode).
+// encryptionManagers is a thread-safe registry of the live per-proxy encryption
+// session managers. Multiple providers (a native client plus each proxy's
+// client) each own their own connect client -> encryption manager, so a single
+// pointer was both a data race (written per provideWithProxy, read by the
+// periodic [pqe] line) and dropped every manager but the last. The [pqe] line
+// sums counts across every registered manager.
+var encryptionManagers = struct {
+	mu  sync.Mutex
+	set []*connect.EncryptionSessionManager
+}{}
+
+func registerEncryptionManager(m *connect.EncryptionSessionManager) {
+	if m == nil {
+		return
+	}
+	encryptionManagers.mu.Lock()
+	defer encryptionManagers.mu.Unlock()
+	encryptionManagers.set = append(encryptionManagers.set, m)
+}
+
+func unregisterEncryptionManager(m *connect.EncryptionSessionManager) {
+	if m == nil {
+		return
+	}
+	encryptionManagers.mu.Lock()
+	defer encryptionManagers.mu.Unlock()
+	for i, x := range encryptionManagers.set {
+		if x == m {
+			encryptionManagers.set = append(encryptionManagers.set[:i], encryptionManagers.set[i+1:]...)
+			return
+		}
+	}
+}
+
+// pqeTotalCounts sums PQECounts across all live encryption managers.
+func pqeTotalCounts() connect.PQECounts {
+	var total connect.PQECounts
+	encryptionManagers.mu.Lock()
+	n := len(encryptionManagers.set)
+	snapshot := make([]*connect.EncryptionSessionManager, n)
+	copy(snapshot, encryptionManagers.set)
+	encryptionManagers.mu.Unlock()
+	for _, m := range snapshot {
+		c := m.PQECounts()
+		total.ActivePQE += c.ActivePQE
+		total.ActiveClas += c.ActiveClas
+		total.PQEHour += c.PQEHour
+		total.PQEDay += c.PQEDay
+		total.PQEWeek += c.PQEWeek
+		total.PQELifetime += c.PQELifetime
+		total.ClasHour += c.ClasHour
+		total.ClasDay += c.ClasDay
+		total.ClasWeek += c.ClasWeek
+		total.ClasLifetime += c.ClasLifetime
+	}
+	return total
+}
+
 func runEarningWindows(ctx context.Context) {
 	const maxSamples = 60
 	deltas := make([]uint64, 0, maxSamples)
@@ -1201,6 +1292,17 @@ func runEarningWindows(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		}
+
+		c := pqeTotalCounts()
+		if c.ActivePQE != 0 || c.ActiveClas != 0 || c.PQEHour != 0 || c.PQEDay != 0 ||
+			c.PQEWeek != 0 || c.PQELifetime != 0 || c.ClasHour != 0 || c.ClasDay != 0 ||
+			c.ClasWeek != 0 || c.ClasLifetime != 0 {
+			_ = c
+			tlog("🔐 [pqe] live pqe=%d classical=%d | opens 1h: pqe=%d clas=%d | 24h: pqe=%d clas=%d | 7d: pqe=%d clas=%d | lifetime: pqe=%d clas=%d\n",
+				c.ActivePQE, c.ActiveClas,
+				c.PQEHour, c.ClasHour, c.PQEDay, c.ClasDay, c.PQEWeek, c.ClasWeek,
+				c.PQELifetime, c.ClasLifetime)
 		}
 
 		if connect.ProxyHealthCount() == 0 {
@@ -2330,12 +2432,8 @@ func provide(opts docopt.Opts) {
 		}
 	}
 
-	bootstrapHubCA(ctx, os.Getenv("URNETWORK_REPORT_URL"), os.Getenv("URNETWORK_HUB_TOKEN"))
-
 	go runOutageWatcher(ctx, watcherName, os.Getenv("URNETWORK_ALERT_WEBHOOK"))
 	go runHealthHeartbeat(ctx, provideStartTime, os.Getenv("URNETWORK_PROFILE"))
-	go runBandwidthReporter(ctx, watcherName, watcherName, os.Getenv("URNETWORK_REPORT_URL"), provideStartTime)
-	go runHeartbeatReporter(ctx, watcherName, watcherName, os.Getenv("URNETWORK_REPORT_URL"), provideStartTime)
 	go runJWTRefresher(ctx, apiUrl)
 	go runEarningWindows(ctx)
 	go runProfitHeartbeat(ctx)
@@ -2689,7 +2787,11 @@ func provide(opts docopt.Opts) {
 
 		clientOob := connect.NewApiOutOfBandControl(proxyCtx, clientStrategy, byClientJwt, apiUrl)
 		connectClient := connect.NewClient(proxyCtx, clientId, clientOob, clientSettings)
-		defer connectClient.Close()
+		defer func() {
+			unregisterEncryptionManager(connectClient.EncryptionSessionManager())
+			connectClient.Close()
+		}()
+		registerEncryptionManager(connectClient.EncryptionSessionManager())
 
 		// Persist the live identity material so the next process
 		// start loads the same values. On a fresh install both
@@ -2984,6 +3086,11 @@ func provide(opts docopt.Opts) {
 		drainingProxies: make(map[string]context.CancelFunc),
 	}
 	reloader.StartWatcher(ctx)
+	// Enforce an operator trim cap immediately at startup. The initial launch
+	// loop spawns every entry in the source, so without this the first reload
+	// reconciler tick (up to an hour later) would be the first time the cap
+	// binds (review finding HIGH).
+	reloader.reload()
 
 	go runProxyURLFetcher(ctx, proxyURLs, proxyURLRefresh, proxyURLMax, apiProbeHost, apiProbePort, selfHealEnabled)
 	go runURLProxyReaper(ctx, apiProbeHost, apiProbePort)

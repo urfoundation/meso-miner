@@ -6,7 +6,7 @@
 # via `docker exec`, so it is NOT baked into the image — docker-only users
 # install it with this script:
 #
-#   curl -fSsL https://raw.githubusercontent.com/full-bars/urnetwork-3.23-fix/refs/heads/main/scripts/install-urnet-docker.sh | sh
+#   curl -fSsL https://raw.githubusercontent.com/urfoundation/meso-miner/refs/heads/main/scripts/install-urnet-docker.sh | sh
 #
 # The same script can install urnet-tools (process/systemd variant) by
 # passing the tool name as the first argument:
@@ -22,8 +22,8 @@
 # `urnet-docker update`).
 set -e
 
-API_BASE="https://api.github.com/repos/full-bars/urnetwork-3.23-fix"
-REPO="full-bars/urnetwork-3.23-fix"
+API_BASE="https://api.github.com/repos/${REPO}"
+REPO="urfoundation/meso-miner"
 
 no_modify_bashrc=0
 TOOL=""
@@ -127,17 +127,13 @@ TMPDIR_T="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_T"' EXIT
 TMPBIN="$TMPDIR_T/$ASSET"
 
-DL_URL="https://dl.fullbars.xyz/releases/download/$TAG/$ASSET"
-MIRROR_URL="https://github.com/$REPO/releases/download/$TAG/$ASSET"
+DL_URL="https://github.com/$REPO/releases/download/$TAG/$ASSET"
 
 echo "Downloading $ASSET..."
 if ! curl -fsSL --connect-timeout 10 --retry 3 --retry-delay 2 "$DL_URL" -o "$TMPBIN" 2>/dev/null; then
-    echo "primary download failed, trying GitHub mirror..."
-    if ! curl -fsSL --connect-timeout 10 --retry 3 --retry-delay 2 "$MIRROR_URL" -o "$TMPBIN" 2>/dev/null; then
-        pr_err "failed to download from both primary and mirror"
+        pr_err "failed to download release asset"
         exit 1
     fi
-fi
 
 echo "Verifying sha256..."
 if command -v sha256sum > /dev/null 2>&1; then
@@ -189,7 +185,19 @@ EOF
 esac
 
 echo
-echo "Usage:"
-echo "  $TOOL providers                          # list provider containers"
-echo "  $TOOL update                             # update $TOOL itself"
-echo "  $TOOL exec -- <container-command>        # run a command in a container"
+echo "Usage: $TOOL <command> [flags]"
+echo
+echo "Commands:"
+echo "  $TOOL providers                 # list provider containers"
+echo "  $TOOL status [target]           # detailed container status"
+echo "  $TOOL logs [target] [N]         # tail container logs (RAMLOGS-aware)"
+echo "  $TOOL start|stop|restart [target] # control container lifecycle"
+echo "  $TOOL proxy add <file>          # bulk add proxies from host file"
+echo "  $TOOL proxy health|traffic      # view live proxy health & metrics"
+echo "  $TOOL proxy trim <N>            # hold running proxies at cap N"
+echo "  $TOOL proxy refresh|clear       # reload or clear proxy pool"
+echo "  $TOOL self-heal <on|off|status> # manage proxy self-healing"
+echo "  $TOOL auth [<code>] [target]    # authenticate provider in container"
+echo "  $TOOL summary [target]          # fleet-style summary for container"
+echo "  $TOOL update                    # update $TOOL itself"
+echo "  $TOOL exec [target] [--] <cmd>  # run arbitrary command inside container"

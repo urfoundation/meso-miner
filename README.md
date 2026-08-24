@@ -1,11 +1,11 @@
 # ⛓ UrNetwork v3.23 Fix
 
 [![CodeRabbit Pull Request Reviews](https://img.shields.io/badge/CodeRabbit_Reviews-AI_PRs-FF570A?labelColor=171717&link=https%3A%2F%2Fcoderabbit.ai)](https://coderabbit.ai)
-[![CI](https://github.com/full-bars/urnetwork-3.23-fix/actions/workflows/build.yml/badge.svg)](https://github.com/full-bars/urnetwork-3.23-fix/actions)
-![Go Version](https://img.shields.io/github/go-mod/go-version/full-bars/urnetwork-3.23-fix?labelColor=171717&color=FF570A)
-![Release](https://img.shields.io/github/v/release/full-bars/urnetwork-3.23-fix?labelColor=171717&color=FF570A)
-![Language](https://img.shields.io/github/languages/top/full-bars/urnetwork-3.23-fix?labelColor=171717&color=FF570A)
-![Activity](https://img.shields.io/github/commit-activity/m/full-bars/urnetwork-3.23-fix?labelColor=171717&color=FF570A)
+[![CI](https://github.com/full-bars/meso-miner/actions/workflows/build.yml/badge.svg)](https://github.com/full-bars/meso-miner/actions)
+![Go Version](https://img.shields.io/github/go-mod/go-version/full-bars/meso-miner?labelColor=171717&color=FF570A)
+![Release](https://img.shields.io/github/v/release/full-bars/meso-miner?labelColor=171717&color=FF570A)
+![Language](https://img.shields.io/github/languages/top/full-bars/meso-miner?labelColor=171717&color=FF570A)
+![Activity](https://img.shields.io/github/commit-activity/m/full-bars/meso-miner?labelColor=171717&color=FF570A)
 
 A high-performance, high-visibility fork of the **UrNetwork Connect** provider, based on the stable **v3.23** engine. Tuned for professional providers managing large proxy lists, high throughput, and production-grade operations.
 
@@ -19,10 +19,16 @@ A high-performance, high-visibility fork of the **UrNetwork Connect** provider, 
 | Proxy changes | Restart required | Hot-reload via trigger file, zero downtime, with full added-proxy listing |
 | Proxy source | Static file only | File and/or live URL feed, with scoped auto-cleanup |
 | Error noise | Auth/contract errors spam logs | Rate-limited with suppressed counts |
-| Fleet visibility | None | Hub dashboard — live Mbps, billable traffic, per-proxy drilldown |
 | Performance profiles | None | Auto / Turbo V4 / Turbo V8 / Eco / Lowmem |
 | Crash diagnostics | Journal-only, logs lost on restart | Disk-based critical event log + preserved RAM logs, panic hooks |
 | Custom API/connect backend | One-off `--api_url`/`--connect_url` flags only, re-passed on every invocation | `choose_network` persists the URLs to disk; flags still override per-call |
+
+---
+
+> [!WARNING]
+> **Experimental commands:** `provider claim`, `provider bind-head`, `provider unbind-head`, and
+> `provider wallet set` are experimental, the mechanism may change, and they are not recommended
+> for production use yet. Ported but not exercised against mainnet.
 
 ---
 
@@ -37,7 +43,6 @@ A high-performance, high-visibility fork of the **UrNetwork Connect** provider, 
 | Choose profiles, turbo mode, or host tuning | [Performance Tuning](docs/High-Volume-Performance-Tuning.md) |
 | Understand environment variables | [Configuration Reference](docs/Configuration.md) |
 | Interpret provider logs | [Log Message Reference](LOG_REFERENCE.md) |
-| Monitor your fleet with the bandwidth hub dashboard | [Hub Dashboard](docs/Hub-Dashboard.md) |
 | Load a proxy file into the provider (per-OS) | [Adding Proxies](docs/Adding-Proxies.md) |
 | Feed the provider a live proxy list URL | [Proxy URL Sources](docs/Proxy-URL-Sources.md) |
 
@@ -49,11 +54,11 @@ Choose your platform:
 
 | Platform | Install | Uninstall |
 |----------|---------|-----------|
-| 🐧 Linux (systemd) | [`curl -fSsL https://dl.fullbars.xyz/install.sh \| sh`](https://dl.fullbars.xyz/install.sh) | [`curl -fSsL https://dl.fullbars.xyz/uninstall.sh \| sh`](https://dl.fullbars.xyz/uninstall.sh) |
-| 🍎 macOS (launchd) | [`curl -fSsL https://dl.fullbars.xyz/install-mac.sh \| sh`](https://dl.fullbars.xyz/install-mac.sh) | manual — see [docs/Installation.md](docs/Installation.md) |
-| 🪟 Windows (PowerShell) | [`irm https://dl.fullbars.xyz/install-win.ps1 \| iex`](https://dl.fullbars.xyz/install-win.ps1) | [`irm https://dl.fullbars.xyz/uninstall-win.ps1 \| iex`](https://dl.fullbars.xyz/uninstall-win.ps1) |
-| 🐋 Docker | `docker pull ghcr.io/full-bars/urnetwork-3.23-fix:latest` | `docker rm -f <container> && docker rmi ghcr.io/full-bars/urnetwork-3.23-fix:latest` |
-| 🐋 Docker (manage) | [`curl -fSsL https://dl.fullbars.xyz/urnet-docker.sh \| sh`](https://dl.fullbars.xyz/urnet-docker.sh) | `rm /usr/local/bin/urnet-docker` (root) or `rm ~/.local/bin/urnet-docker` (non-root) |
+| 🐧 Linux (systemd) | [`curl -fSsL https://raw.githubusercontent.com/full-bars/meso-miner/refs/heads/main/scripts/Provider_Install_Linux.sh \| sh`](https://raw.githubusercontent.com/full-bars/meso-miner/refs/heads/main/scripts/Provider_Install_Linux.sh) | [`curl -fSsL https://raw.githubusercontent.com/full-bars/meso-miner/refs/heads/main/scripts/Provider_Uninstall_Linux.sh \| sh`](https://raw.githubusercontent.com/full-bars/meso-miner/refs/heads/main/scripts/Provider_Uninstall_Linux.sh) |
+| 🍎 macOS (launchd) | [`curl -fSsL https://raw.githubusercontent.com/full-bars/meso-miner/refs/heads/main/scripts/Provider_Install_Mac.sh \| sh`](https://raw.githubusercontent.com/full-bars/meso-miner/refs/heads/main/scripts/Provider_Install_Mac.sh) | manual — see [docs/Installation.md](docs/Installation.md) |
+| 🪟 Windows (PowerShell) | [`irm https://raw.githubusercontent.com/full-bars/meso-miner/refs/heads/main/scripts/Provider_Install_Win32.ps1 \| iex`](https://raw.githubusercontent.com/full-bars/meso-miner/refs/heads/main/scripts/Provider_Install_Win32.ps1) | [`irm https://raw.githubusercontent.com/full-bars/meso-miner/refs/heads/main/scripts/Provider_Uninstall_Win32.ps1 \| iex`](https://raw.githubusercontent.com/full-bars/meso-miner/refs/heads/main/scripts/Provider_Uninstall_Win32.ps1) |
+| 🐋 Docker | `docker pull ghcr.io/full-bars/meso-miner:latest` | `docker rm -f <container> && docker rmi ghcr.io/full-bars/meso-miner:latest` |
+| 🐋 Docker (manage) | [`curl -fSsL https://raw.githubusercontent.com/full-bars/meso-miner/refs/heads/main/scripts/install-urnet-docker.sh \| sh`](https://raw.githubusercontent.com/full-bars/meso-miner/refs/heads/main/scripts/install-urnet-docker.sh) | `rm /usr/local/bin/urnet-docker` (root) or `rm ~/.local/bin/urnet-docker` (non-root) |
 
 After installation, authenticate and start providing:
 
@@ -71,7 +76,7 @@ walkthrough, including the `.txt.txt` extension trap: [Adding Proxies](docs/Addi
 > [!NOTE]
 > Since v3.23.0-fix.27.0, `urnet-tools` is a provider-aware Go binary (the legacy POSIX shell + PowerShell variants are retired). It discovers every provider on the box and **refuses to act on an ambiguous target** — on multi-provider machines, pass `--unit` / `--user` / `--network` / `--network-id` / `--state-dir`. See [docs/urnet-tools-go.md](docs/urnet-tools-go.md).
 >
-> Docker-only deployments: the provider runs in a container, but the management tool (`urnet-docker`) runs **on the docker host, outside the container**. Install it with the one-liner above (use `curl -fSsL https://dl.fullbars.xyz/urnet-docker.sh | sh -s -- urnet-tools` for the systemd variant; GitHub fallback: `curl -fSsL https://raw.githubusercontent.com/full-bars/urnetwork-3.23-fix/refs/heads/main/scripts/install-urnet-docker.sh | sh` (use `| sh -s -- urnet-tools` for the systemd variant)). The tool self-updates afterward (`urnet-docker update`).
+> Docker-only deployments: the provider runs in a container, but the management tool (`urnet-docker`) runs **on the docker host, outside the container**. Install it with the one-liner above (use `curl -fSsL https://raw.githubusercontent.com/full-bars/meso-miner/refs/heads/main/scripts/install-urnet-docker.sh | sh -s -- urnet-tools` for the systemd variant). The tool self-updates afterward (`urnet-docker update`).
 
 ### 🐋 Docker (Production-Ready)
 
@@ -96,7 +101,7 @@ docker run -d \
   -v /path/to/proxy.txt:/app/proxy.txt \
   -p 8080:8080 \
   -e URNETWORK_AUTH_CODE='YOUR_AUTH_CODE_HERE' \
-  ghcr.io/full-bars/urnetwork-3.23-fix:latest
+  ghcr.io/full-bars/meso-miner:latest
 ```
 
 **Key env vars:**
@@ -131,35 +136,12 @@ See [Docker Deployment](docs/Docker-Deployment.md) for Docker Compose, email/pas
 | `urnet-tools hot-restart on/off` | Toggle client JWT reuse across restarts (on by default; `off` sets `URNETWORK_HOT_RESTART=0`) |
 | `urnet-tools session save <file>` | Export identity+proxy state as encrypted bundle (cross-machine transfer) |
 | `urnet-tools session load <file>` | Import identity+proxy state, then restart |
-| `urnet-tools report <url>` | You want to set or change the hub report URL without restarting |
 | `urnet-tools report` | You want to check which URL the provider is currently reporting to |
 | `urnetwork choose_network <api_url> <connect_url>` | You run your own API/connect backend and want the provider to default to it |
 | `urnetwork choose_network --reset` | You want to clear a saved custom network and revert to the main network |
 
 > [!TIP]
 > `~/proxies.txt` and `/home/user/proxies.txt` are both valid path formats.
-
----
-
-## 📡 Fleet Dashboard
-
-Monitor your entire fleet in real time. The hub aggregates bandwidth reports from all nodes and renders a live HTML dashboard with traffic rates, billable accounting, per-proxy drilldown, and auto-refresh.
-
-![Hub Dashboard Preview](docs/hub-dashboard-preview.png)
-
-```bash
-# Run the hub (Linux, via urnet-tools — recommended)
-urnet-tools hub install
-
-# Or run it in Docker (Windows / Mac / any host)
-docker build -f hub/Dockerfile -t urnetwork-hub .
-docker run -d --name urnetwork-hub -p 8080:8080 -v hubdata:/data urnetwork-hub
-
-# Point each provider at it
-URNETWORK_REPORT_URL=http://HUB_IP:8080
-```
-
-See [Hub Setup](docs/Hub-Setup.md) for installation and [Hub Dashboard](docs/Hub-Dashboard.md) for full feature details.
 
 ---
 
@@ -183,8 +165,6 @@ See [Hub Setup](docs/Hub-Setup.md) for installation and [Hub Dashboard](docs/Hub
 - [Configuration Reference](docs/Configuration.md)
 - [Proxy Management & Hot-Reload](docs/Proxy-Management.md)
 - [High-Volume Performance Tuning](docs/High-Volume-Performance-Tuning.md)
-- [Hub Setup](docs/Hub-Setup.md)
-- [Hub Dashboard](docs/Hub-Dashboard.md)
 - [Project Structure](docs/Project-Structure.md)
 - [Log Message Reference](LOG_REFERENCE.md)
 - [Go urnet-tools Reference](docs/urnet-tools-go.md)
@@ -192,15 +172,15 @@ See [Hub Setup](docs/Hub-Setup.md) for installation and [Hub Dashboard](docs/Hub
 
 **Wiki:**
 
-- [Online GitHub Wiki](https://github.com/full-bars/urnetwork-3.23-fix/wiki)
-- [CI and Release Process](https://github.com/full-bars/urnetwork-3.23-fix/wiki/CI-and-Release-Process)
+- [Online GitHub Wiki](https://github.com/full-bars/meso-miner/wiki)
+- [CI and Release Process](https://github.com/full-bars/meso-miner/wiki/CI-and-Release-Process)
 
 ---
 
 ## 🏗 Build Info
 
 - **Base engine:** UrNetwork v3.23
-- **Language:** Go 1.26, compiled on Alpine
+- **Language:** Go 1.27, compiled on Alpine
 - **Images:** Multi-arch `linux/amd64` + `linux/arm64`, `darwin/amd64` + `darwin/arm64` via GitHub Actions → GHCR
 - **Bridge-friendly:** runs on standard Docker bridge networks, no `--network host` required
 

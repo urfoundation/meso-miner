@@ -21,223 +21,24 @@ import (
 // un-stamped builds. Printed by the version command.
 var ToolVersion = "dev"
 
-// Run is the CLI entry point. It parses subcommands and dispatches. The
-// legacy shell dispatcher bug — `--help` executing a destructive op — cannot
-// exist here because every subcommand parses its own flags before acting.
 func Run(args []string) error {
-	if len(args) == 0 {
-		usage()
-		return nil
+	// A nil slice must stay nil-free: SetArgs(nil) makes Cobra fall back to
+	// os.Args[1:], so Run(nil) would execute the caller's real argv (review LOW).
+	if args == nil {
+		args = []string{}
 	}
-	op := args[0]
-	switch op {
-	case "version", "--version", "-v":
-		fmt.Println(ToolVersion)
-		return nil
+	// Match on args[0] regardless of trailing args, as the old dispatcher did:
+	// `-v junk` still prints the version (Sonnet/Muse review).
+	if len(args) >= 1 {
+		switch args[0] {
+		case "version", "--version", "-v":
+			fmt.Println(ToolVersion)
+			return nil
+		}
 	}
-	rest := args[1:]
-	switch op {
-	case "providers", "list", "ps":
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		_, _, _ = force, dryRun, rest2 // providers is read-only; flags consumed for help handling
-		return cmdProviders(rest2)
-	case "status":
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		_, _, _ = force, dryRun, rest2
-		return cmdStatus(rest2)
-	case "update":
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return cmdUpdate(rest2, force, dryRun)
-	case "default":
-		// Manage the persisted default provider target (set/show/clear). No
-		// provider discovery, no targeting — pure config.
-		return cmdDefault(rest)
-	case "self-update", "selfupdate":
-		// Tool-only update: refresh the urnet-tools binary itself without
-		// touching any provider. Uses the same release resolution + digest
-		// verification as `update`'s self-update leg, but never restarts or
-		// swaps providers. Works on boxes with zero providers (e.g. a
-		// docker-managed host where only the tool is installed).
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return cmdSelfUpdate(rest2, force, dryRun)
-	case "proxy":
-		// Let `proxy -h/--help` and `proxy <sub> ... -h/--help` reach
-		// cmdProxy's proxy-specific help instead of being intercepted as
-		// global help (gauntlet finding BUG-2: nested help showed root
-		// usage). Help at ANY position in the proxy args wants proxy help —
-		// parseGlobalFlags scans all positions, so the interception must
-		// too, else `proxy add <file> --help` still falls through to root
-		// usage (Sonnet review finding).
-		for _, a := range rest {
-			if a == "-h" || a == "--help" {
-				return cmdProxy(rest, false, false)
-			}
-		}
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return cmdProxy(rest2, force, dryRun)
-	case "summary":
-		rest2, herr := parseDelegationArgs(rest)
-		if herr == errHelpShown {
-			return nil // help printed, never executes
-		}
-		if herr != nil {
-			return herr
-		}
-		return cmdSimpleDelegation("summary", rest2)
-	case "report":
-		rest2, herr := parseDelegationArgs(rest)
-		if herr == errHelpShown {
-			return nil // help printed, never executes
-		}
-		if herr != nil {
-			return herr
-		}
-		return cmdReport(rest2)
-	case "hot-restart", "hotrestart":
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil // help printed, never executes
-		}
-		if err != nil {
-			return err
-		}
-		return cmdHotRestart(rest2, force, dryRun)
-	case "start":
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return cmdStart(rest2, force, dryRun)
-	case "stop":
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return cmdStop(rest2, force, dryRun)
-	case "restart":
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return cmdRestart(rest2, force, dryRun)
-	case "logs":
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		_, _ = force, dryRun
-		return cmdLogs(rest2)
-	case "hub":
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return cmdHub(rest2, force, dryRun)
-	case "turbo", "eco", "lowmode", "ramlogs", "auto":
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return cmdTune(op, rest2, force, dryRun)
-	case "optimize":
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return cmdOptimize(rest2, force, dryRun)
-	case "auto-start", "autostart":
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return cmdAutoStart(rest2, force, dryRun)
-	case "auto-update", "autoupdate":
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return cmdAutoUpdate(rest2, force, dryRun)
-	case "uninstall":
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return cmdUninstall(rest2, force, dryRun)
-	case "reinstall":
-		force, dryRun, rest2, err := parseGlobalFlags(rest)
-		if err == errHelpShown {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return cmdReinstall(rest2, force, dryRun)
-	case "help", "-h", "--help":
-		usage()
-		return nil
-	default:
-		return fmt.Errorf("unknown command %q (see 'urnet-tools help')", op)
-	}
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs(args)
+	return rootCmd.Execute()
 }
 
 // parseGlobalFlags extracts -f/--force and -n/--dry-run, returning the
@@ -260,12 +61,12 @@ func parseGlobalFlags(args []string) (force, dryRun bool, rest []string, err err
 	return force, dryRun, rest, nil
 }
 
-// cmdSimpleDelegation handles the pass-through commands (summary):
-// resolve the targeted provider, then delegate the exact subcommand to that
-// provider's binary. report and hot-restart have real implementations (see
-// cmdReport / cmdHotRestart) because the provider binary has no report or
-// hot-restart subcommands — delegating to it printed the provider's auth
-// usage and did nothing (gauntlet findings BUG-4).
+// cmdSimpleDelegation handles the pass-through commands (summary,
+// hot-restart): resolve the targeted provider, then delegate the exact
+// subcommand to that provider's binary. These have real implementations here
+// because the provider binary has no summary or hot-restart subcommands —
+// delegating to it printed the provider's auth usage and did nothing
+// (gauntlet findings BUG-4).
 func cmdSimpleDelegation(sub string, args []string) error {
 	t, rest, err := parseTargetFlagsLenient(args)
 	if err != nil {
@@ -284,54 +85,6 @@ func cmdSimpleDelegation(sub string, args []string) error {
 	// nested argv; everything else stays flat.
 	cmdArgs := append([]string{"proxy", sub}, rest...)
 	return providerSubcommand(p, cmdArgs...)
-}
-
-// cmdReport implements `urnet-tools report <url> [target]`: it writes the
-// hub-report URL override file (~/.urnetwork/report_url) in the provider's
-// state dir. The provider's bandwidth reporter re-reads that file every
-// tick, so the change takes effect without a restart. The provider binary
-// has NO report subcommand — delegating to it printed auth usage and did
-// nothing (gauntlet finding BUG-4).
-func cmdReport(args []string) error {
-	t, rest, err := parseTargetFlagsLenient(args)
-	if err != nil {
-		return err
-	}
-	providers := Discover()
-	p, err := selectTarget(providers, t)
-	if err != nil {
-		return err
-	}
-	if len(rest) < 1 {
-		return fmt.Errorf("report requires a URL (use 'report off' to disable)")
-	}
-	url := rest[0]
-	if p.StateDir == "" {
-		return fmt.Errorf("provider %s has no resolvable state dir", providerLabel(p))
-	}
-	if err := writeReportURL(p, url); err != nil {
-		return err
-	}
-	fmt.Printf("report URL for %s set to %q (effective on the reporter's next tick)\n", providerLabel(p), url)
-	return nil
-}
-
-// writeReportURL writes the hub-report override file for a provider.
-// Extracted from cmdReport so the write itself is directly testable with a
-// Provider struct (no live process needed). The provider's bandwidth
-// reporter re-reads this file every tick.
-func writeReportURL(p Provider, url string) error {
-	path := filepath.Join(p.StateDir, "report_url")
-	// 0o644, not 0o600: urnet-tools frequently runs as a different user than
-	// the provider (root tool + urnetwork-beta service — the fleet norm this
-	// codebase supports via -M <user>@ and HOME= overrides). A 0600 file
-	// owned by the tool's user would be unreadable by the provider process,
-	// so the change would silently never take effect (Sonnet review
-	// finding). The sibling override-writers use 0o644 for this reason.
-	if err := os.WriteFile(path, []byte(url+"\n"), 0o644); err != nil {
-		return fmt.Errorf("write %s: %v", path, err)
-	}
-	return nil
 }
 
 // cmdHotRestart implements `urnet-tools hot-restart [target]`: it restarts
@@ -366,7 +119,7 @@ func cmdHotRestart(args []string, force, dryRun bool) error {
 }
 
 // parseDelegationArgs guards -h/--help for the pass-through commands
-// (summary, report, hot-restart) BEFORE any targeting runs: those commands
+// (summary, hot-restart) BEFORE any targeting runs: those commands
 // delegate to the provider binary, so without this guard `--help` would be
 // forwarded and the operation would actually run (the help-never-executes
 // invariant, review finding C1 class). Returns errHelpShown when help was
@@ -393,67 +146,67 @@ func usage() {
 Usage: urnet-tools <command> [flags]
 
 Core Commands:
-  providers               list all providers on this box (all users, JWT identity)
-  status [target]         detailed status of one provider
-  start|stop|restart [target]   control the provider's systemd unit
-  update [target]         update provider(s) to latest (interactive; --tag to pin)
-  self-update             update this tool binary itself (no providers touched)
-  logs [target] [N]       show recent provider logs (N lines, default 250)
-  summary [target]        fleet-style summary for one provider
-  version                 print this tool's version
+  providers                       🌐  list all providers on this box (all users, JWT identity)
+  status [target]                 📊  detailed status of one provider
+  start/stop/restart [target]     ▶   control the provider's systemd unit
+  update [target]                 ⬆   update provider(s) to latest (--tag to pin)
+  self-update                     ⬆   update this tool binary itself
+  logs [target] [N]               📜  show recent provider logs (N lines, default 250)
+  summary [target]                📃  fleet-style summary for one provider
+  version                         ℹ️   print this tool's version
 
-Performance & Tuning (single target; on|off unless noted):
-  turbo <v4|v8|off> [target]   raise throughput limits for RAM-rich boxes
-  eco <on|off> [target]        GC-tuned profile for low-RAM systems
-  lowmode <on|off> [target]    reduced buffers for max RAM savings
-  auto <on|off> [target]       auto-detect hardware and pick best profile
-  ramlogs <on|off> [target]    zero disk I/O logging
-  optimize [target]            apply golden-fleet OS/kernel limits
-  hot-restart [target]         restart one provider's unit, reusing client_ids
+Session & defaults:
+  default set|show|clear          🎯  persist a default provider target for this box
+  session save <file>             💾  export identity + proxy state (encrypted)
+  session load <file>             📥  import identity + proxy state, then restart
+
+Performance & Tuning (single target):
+  turbo <v4|v8|off> [target]      🚀  RAISE throughput limits for RAM-rich boxes
+  auto <on|off> [target]          🧠  AUTO-TUNE detect hardware and pick best profile
+  eco <on|off> [target]           🌿  ECO MODE GC-tuned for low-RAM systems
+  lowmode <on|off> [target]       🧊  LOW-MEMORY reduced buffers for max RAM savings
+  ramlogs <on|off> [target]       📝  RAM LOGS zero disk I/O logging
+  optimize [target]               ⚡   apply golden-fleet OS/kernel limits
+  hot-restart [target]            ♻   reuse client_ids across restarts
+  fast-auth <on|off|status>       ⚡   manage the auth rate limiter (marker file)
+  set <key> [<value>|off]         🔧  runtime tuning override, read live (no restart)
 
 Proxy Management [target]:
-  proxy add <file>          bulk add proxies from a text file
-  proxy clear|remove        remove all configured proxies
-  proxy refresh             re-read configs and hot-reload proxies
-  proxy add-source <url>    add a URL proxy source
-  proxy remove-source <url> remove a URL proxy source
-  proxy health              show dead/degraded proxies + live event log
-  proxy traffic             real-time bandwidth & client session load
-  proxy remove-dead         interactively prune dead/degraded/failing
-  report <url> [target]     set hub report URL at runtime (no restart)
-
-Hub Management [target]:
-  hub set <host:port>       configure hub report URL
-  hub off                   stop reporting to hub (no restart)
-  hub install [--tag=TAG]   install hub as a systemd service
-
+  auth [<code>]                   🔑  authenticate (omit for interactive paste)
+  choose-network <api> <connect>  🌐  set API/connect endpoints (--reset reverts)
+  proxy add <file>                🌐  bulk add proxies from a text file
+  proxy clear|remove              🗑   remove all configured proxies
+  proxy refresh                   🔄  re-read configs and hot-reload proxies
+  proxy add-source <url>          ➕   add a URL proxy source
+  proxy remove-source <url>       ➖   remove a URL proxy source
+  proxy health                    ❤   show dead/degraded proxies + live event log
+  proxy traffic                   📈  real-time bandwidth + client session load
+  proxy remove-dead               💀  interactively prune dead/degraded/failing
+  proxy trim <N>                  ✂   hold running proxies at N, shed worst first (F -> A)
 Maintenance [target]:
-  reinstall                reinstall provider
-  uninstall                uninstall provider
-  auto-update <on|off>     manage auto-update schedule
-  auto-start <on|off>      toggle auto-start on login
+  reinstall                       🔧  reinstall provider
+  uninstall                       🗑   uninstall provider
+  auto-update <on|off>            ⏰  manage auto-update schedule
+  auto-start <on|off>             ▶   toggle auto-start on login
 
 Providers are identified three ways (use any; the = form works too,
 e.g. --user=urnet is the same as --user urnet):
   --unit <name>          systemd unit, e.g. urnetwork-native.service
   --user <user>          OS user, e.g. urnet
   --network <name>       JWT network name (account identity), e.g. tacogonzalez3000
-  --network-id <id>      JWT network id — TRUE unique identity; use when two
-                         providers share the same network name (e.g. mainnet
-                         + beta copies of one account)
+  --network-id <id>      JWT network id - TRUE unique identity; use when two providers
+                         share the same network name (e.g. mainnet + beta copies)
 
 Targeting rules:
   - one provider on box: no flag needed, it is used automatically
   - multiple providers: MUST pick one (--unit/--user/--network), else REFUSED
   - same network name on two providers: add --network-id or --unit to break the tie
-  - batch: --include a,b (exactly these) / --exclude a,b (subtract) / --all (everything)
-  - --select             interactive picker (choose A B C, skip D)
+  - batch: --include a,b / --exclude a,b / --all (everything)
+  - --select  interactive picker (choose A B C, skip D)
   - see 'providers' first to learn each provider's unit/user/network
 
 Force (machines/scripts):
-  -f, --force            skip confirm prompts ONLY — never picks providers.
-                         Multi-provider box + -f alone = REFUSED (no target).
-                         Use -f --all (everything) or -f --include a,b.
+  -f, --force            skip confirm prompts ONLY - never picks providers
   -n, --dry-run          print the plan, change nothing (safe anywhere)
   -h, --help             show help (never executes anything)
 `)
@@ -462,7 +215,7 @@ Force (machines/scripts):
 // parseTargetFlagsLenient is like parseTargetFlags but does NOT reject
 // unknown --flags: it only extracts the known targeting flags and leaves
 // everything else (including provider-binary flags like --force) in rest
-// for pass-through. Used by delegation commands (summary/report/hot-restart,
+// for pass-through. Used by delegation commands (summary/hot-restart,
 // proxy refresh/remove-dead) where trailing args belong to the provider
 // binary, not this tool.
 func parseTargetFlagsLenient(args []string) (Target, []string, error) {
@@ -644,11 +397,19 @@ func cmdStatus(args []string) error {
 	if narrowed {
 		printNarrowedNote(len(providers), p, "status")
 	}
-	// Windows and macOS get the styled status panel; Linux keeps its
-	// systemd-oriented table untouched.
+	// Windows and macOS get the styled panel. Linux restores the OLD
+	// systemd status view: `systemctl status <unit>` (the pre-rewrite tool's
+	// show_status was literally `systemctl --user status urnetwork.service`).
+	// Falls back to the table when a unit can't be resolved (bare process).
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
 		renderStatusPanel(p)
 		return nil
+	}
+	if err := renderSystemctlStatus(p); err == nil {
+		return nil
+	} else if p.Unit != "" {
+		// Weird: unit set but systemctl failed; surface it.
+		fmt.Fprintf(os.Stderr, "warning: systemctl status failed, falling back: %v\n", err)
 	}
 	w := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
 	fmt.Fprintf(w, "user:\t%s\n", p.User)
@@ -969,4 +730,11 @@ func confirmGate(op string, target Provider, force, dryRun bool) (bool, error) {
 		return false, fmt.Errorf("aborted (confirmation did not match)")
 	}
 	return true, nil
+}
+
+// renderSystemctlStatus is overridden on Linux to reproduce the old
+// `systemctl status <unit>` view. On non-Linux (where systemctl does not
+// apply) it returns an error so cmdStatus falls through to the table/panel.
+var renderSystemctlStatus = func(p Provider) error {
+	return fmt.Errorf("systemctl status not available on %s", runtime.GOOS)
 }
