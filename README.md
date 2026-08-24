@@ -187,4 +187,4 @@ See [Docker Deployment](docs/Docker-Deployment.md) for Docker Compose, email/pas
 
 > [!NOTE]
 > Meso-Miner is a community-maintained project for professional provider use, based on the stable
-> UrNetwork v3.23 engine. Not affiliated with or endorsed by the official UrNetwork project.
+> UrNetwork v3.23 engine.
