@@ -46,7 +46,7 @@ source "$LIB"
 # ---------- HEADER ATTRIBUTION ----------
 echo ""
 echo "--- Test: Header attribution ---"
-h=$(head -5 "$SCRIPT")
+h=$(head -8 "$SCRIPT")
 assert_contains "full-bars" "$h" "Header credits full-bars"
 assert_contains "onlyinthe707" "$h" "Header credits onlyinthe707"
 
@@ -55,24 +55,14 @@ echo ""
 echo "--- Test: show_help ---"
 help_out=$(show_help 2>&1)
 
-# Previously hidden hub commands now visible
-assert_contains "hub init" "$help_out" "Hub init listed in help"
-assert_contains "hub link" "$help_out" "Hub link listed in help"
-assert_contains "hub unlink" "$help_out" "Hub unlink listed in help"
-assert_contains "hub update" "$help_out" "Hub update listed in help"
-
 # Fixed log args (all|dump|-i, not a|d|-i)
 assert_contains "logs [all|dump|-i]" "$help_out" "Logs shows correct all|dump|-i syntax"
 assert_not_contains "logs [a|d|-i]" "$help_out" "Logs does not show hallucinated a|d|-i syntax"
-
-# Hub link shows --token flag (not hallucinated --t)
-assert_contains "--token" "$help_out" "Hub link shows --token flag"
 
 # All sections present
 assert_contains "Core Commands:" "$help_out" "Core Commands section"
 assert_contains "Performance & Tuning:" "$help_out" "Performance & Tuning section"
 assert_contains "Proxy Management:" "$help_out" "Proxy Management section"
-assert_contains "Hub Management:" "$help_out" "Hub Management section"
 assert_contains "Maintenance:" "$help_out" "Maintenance section"
 assert_contains "Global Options:" "$help_out" "Global Options section"
 

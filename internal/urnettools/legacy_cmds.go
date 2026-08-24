@@ -30,18 +30,30 @@ func unitCommand(p Provider, action string, extra ...string) error {
 	return cmd.Run()
 }
 
+// systemctlUserArgs returns the systemctl argv prefix for a user-level unit,
+// using the local session bus when the target user IS the current user and
+// -M <user>@ (machined) otherwise. Same-user invocations must not go through
+// machined because `-M` requires root privileges on journalctl and systemctl.
+func systemctlUserArgs(user string) []string {
+	if user == currentUserName() {
+		return []string{"--user"}
+	}
+	return []string{"--user", "-M", user + "@"}
+}
+
 // unitCommandArgs builds the systemctl argv for an action on the provider's
 // unit: system units use "systemctl <action> <unit>"; user units are scoped
-// to the owning user's session via "--user -M <user>@ <action> <unit>". The
-// unit name is ALWAYS the final argument — systemctl errors "Too few
-// arguments" without it (gauntlet finding: hot-restart printed that error;
-// the pre-fix unitCommandArgs omitted the unit entirely).
+// to the owning user's session via systemctlUserArgs. The unit name is
+// ALWAYS the final argument — systemctl errors "Too few arguments" without
+// it (gauntlet finding: hot-restart printed that error; the pre-fix
+// unitCommandArgs omitted the unit entirely).
 func unitCommandArgs(p Provider, action string, extra ...string) []string {
 	if p.Unit == "" {
 		return []string{"systemctl", action}
 	}
 	if isUserUnit(p.Unit) && p.User != "" {
-		args := []string{"systemctl", "--user", "-M", p.User + "@", action, p.Unit}
+		args := append([]string{"systemctl"}, systemctlUserArgs(p.User)...)
+		args = append(args, action, p.Unit)
 		return append(args, extra...)
 	}
 	args := []string{"systemctl", action, p.Unit}
@@ -182,11 +194,14 @@ func cmdLogs(args []string) error {
 }
 
 // journalctlArgs builds the journalctl argv for following a provider's
-// unit: system units use "-fu <unit>"; user units are scoped to the owning
-// user's session via "-M <user>@ --user-unit <unit> -f" (a plain "-fu"
-// against a user unit name would query the SYSTEM journal instead).
+// unit: system units use "-fu <unit>"; user units for the current user
+// use "--user -u <unit> -f"; cross-user user units use "-M <user>@ --user-unit <unit> -f"
+// (as -M requires root privileges, same-user MUST use --user).
 func journalctlArgs(p Provider) []string {
 	if isUserUnit(p.Unit) && p.User != "" {
+		if p.User == currentUserName() {
+			return []string{"--user", "-u", p.Unit, "-f"}
+		}
 		return []string{"-M", p.User + "@", "--user-unit", p.Unit, "-f"}
 	}
 	return []string{"-fu", p.Unit}
@@ -203,7 +218,8 @@ func providerUsesRamlogs(p Provider) bool {
 	var out []byte
 	var err error
 	if isUserUnit(p.Unit) && p.User != "" {
-		out, err = exec.Command("systemctl", "--user", "-M", p.User+"@", "show", p.Unit, "-p", "Environment").Output()
+		args := append(systemctlUserArgs(p.User), "show", p.Unit, "-p", "Environment")
+		out, err = exec.Command("systemctl", args...).Output()
 	} else {
 		out, err = exec.Command("systemctl", "show", p.Unit, "-p", "Environment").Output()
 	}
@@ -214,59 +230,6 @@ func providerUsesRamlogs(p Provider) bool {
 	return strings.Contains(env, "URNETWORK_RAMLOGS=1") ||
 		strings.Contains(env, "URNETWORK_PROFILE=lowmem") ||
 		strings.Contains(env, "URNETWORK_PROFILE=eco")
-}
-
-// cmdHub implements hub set/off/install: writes the URNETWORK_REPORT_URL
-// drop-in for the targeted provider's unit, or installs the hub binary.
-func cmdHub(args []string, force, dryRun bool) error {
-	if len(args) == 0 {
-		return fmt.Errorf("hub requires a subcommand: set <url> | off | install")
-	}
-	sub := args[0]
-	rest := args[1:]
-	// LENIENT target parse: `hub install` defines its own --tag= flag
-	// (opus5 F1: strict parsing rejected --tag= before cmdHubInstall saw
-	// it). Unknown --flags are rejected per-subcommand below.
-	t, rest, err := parseTargetFlagsLenient(rest)
-	if err != nil {
-		return err
-	}
-	p, err := selectTarget(Discover(), t)
-	if err != nil {
-		return err
-	}
-
-	switch sub {
-	case "set":
-		if len(rest) < 1 {
-			return fmt.Errorf("hub set requires a URL, e.g. urnet-tools hub set http://192.0.2.10:8080")
-		}
-		url := rest[0]
-		if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
-			return fmt.Errorf("invalid URL %q: must begin with http:// or https://", url)
-		}
-		ok, err := confirmGate(fmt.Sprintf("set hub report URL on %s to %s", providerLabel(p), url), p, force, dryRun)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return nil
-		}
-		return writeDropinEnv(p, "hub.conf", "URNETWORK_REPORT_URL="+url)
-	case "off":
-		ok, err := confirmGate("remove hub report URL from "+providerLabel(p), p, force, dryRun)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return nil
-		}
-		return removeDropinEnv(p, "hub.conf", "URNETWORK_REPORT_URL")
-	case "install":
-		return cmdHubInstall(p, rest)
-	default:
-		return fmt.Errorf("unknown hub subcommand %q (set|off|install)", sub)
-	}
 }
 
 // writeDropinEnv writes (or appends) an Environment= line to a drop-in
@@ -481,79 +444,18 @@ func restartAfterDropin(p Provider) error {
 		return fmt.Errorf("provider %s has no owning systemd unit", providerLabel(p))
 	}
 	if isUserUnit(p.Unit) && p.User != "" {
-		_ = exec.Command("systemctl", "--user", "-M", p.User+"@", "daemon-reload").Run()
+		argsReload := append(systemctlUserArgs(p.User), "daemon-reload")
+		_ = exec.Command("systemctl", argsReload...).Run()
 		// Propagate the restart error like the system-unit branch below —
 		// an operator writing a drop-in override must learn when the
 		// provider never actually restarted (Sonnet MEDIUM-2).
-		return exec.Command("systemctl", "--user", "-M", p.User+"@", "restart", p.Unit).Run()
+		argsRestart := append(systemctlUserArgs(p.User), "restart", p.Unit)
+		return exec.Command("systemctl", argsRestart...).Run()
 	}
 	_ = exec.Command("systemctl", "daemon-reload").Run()
 	return exec.Command("systemctl", "restart", p.Unit).Run()
 }
 
-// cmdHubInstall downloads and installs the hub binary + user unit.
-func cmdHubInstall(p Provider, rest []string) error {
-	// The hub binary asset follows the provider release pattern.
-	tag := ""
-	if len(rest) > 0 {
-		tag = strings.TrimPrefix(rest[0], "--tag=")
-	}
-	if tag == "" {
-		if rel, err := latestRelease(); err == nil {
-			tag = rel.Tag
-		} else {
-			return err
-		}
-	}
-	arch := runtimeGOARCH()
-	url := fmt.Sprintf("https://github.com/full-bars/urnetwork-3.23-fix/releases/download/%s/urnetwork-hub-%s-linux-%s", tag, tag, arch)
-	binDir := filepath.Dir(p.Binary)
-	hubBin := filepath.Join(binDir, "urnetwork-hub")
-	fmt.Printf("Downloading hub %s -> %s\n", url, hubBin)
-	if err := downloadFile(url, hubBin); err != nil {
-		return fmt.Errorf("hub download: %w", err)
-	}
-	// chmod FIRST (the sanity check needs the execute bit), then verify the
-	// file structurally WITHOUT executing it — running a freshly downloaded,
-	// unverified binary is code execution of a remote artifact (coderabbit
-	// critical; the provider-update path requires a digest for the same
-	// reason, but the hub asset has no published digest to check against).
-	if err := os.Chmod(hubBin, 0o755); err != nil {
-		return err
-	}
-	if !isRecognizedExecutable(hubBin) {
-		os.Remove(hubBin)
-		return fmt.Errorf("hub download: %s is not a %s executable (corrupted or wrong asset)", hubBin, runtime.GOOS)
-	}
-	// User-level systemd unit for the hub.
-	home := homeForUser(p.User)
-	if home == "" {
-		return fmt.Errorf("cannot resolve home for user %s", p.User)
-	}
-	unitPath := filepath.Join(home, ".config/systemd/user/urnetwork-hub.service")
-	content := fmt.Sprintf(`[Unit]
-Description=URnetwork Hub
-
-[Service]
-ExecStart=%s
-Restart=always
-RestartSec=5
-LimitNOFILE=65536
-
-[Install]
-WantedBy=default.target
-`, hubBin)
-	if err := os.MkdirAll(filepath.Dir(unitPath), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(unitPath, []byte(content), 0o644); err != nil {
-		return err
-	}
-	fmt.Printf("Installed %s\n", unitPath)
-	return nil
-}
-
-// runtimeGOARCH mirrors runtime.GOARCH without importing runtime in helpers.
 func runtimeGOARCH() string {
 	return strings.ToLower(goarch())
 }
@@ -657,21 +559,35 @@ func cmdTune(profile string, args []string, force, dryRun bool) error {
 // to the legacy installer script's optimize when present). Platform-aware:
 // Linux uses sysctl, Windows uses netsh/reg (no kernel to tune, but the
 // network stack equivalents matter for proxy-scale connection churn).
+//
+// NOTE: optimize is intentionally provider-independent. sysctl/netsh operate
+// on the host kernel, not on a specific provider process. Requiring a
+// discovered provider caused `sudo urnet-tools optimize` to fail with "no
+// providers found" because Discover() runs as root and cannot see user-session
+// units owned by the ubuntu user.
 func cmdOptimize(args []string, force, dryRun bool) error {
-	t, _, err := parseTargetFlags(args)
+	// Ignore provider target flags — optimize is host-wide. If unknown flags
+	// are present parseTargetFlags will still error on malformed input.
+	_, remaining, err := parseTargetFlags(args)
 	if err != nil {
 		return err
 	}
-	p, err := selectTarget(Discover(), t)
-	if err != nil {
-		return err
+	if len(remaining) > 0 {
+		return fmt.Errorf("optimize: unexpected arguments: %v", remaining)
 	}
-	ok, err := confirmGate("apply golden-fleet OS/kernel limits to "+providerLabel(p), p, force, dryRun)
-	if err != nil {
-		return err
-	}
-	if !ok {
+	if dryRun {
+		fmt.Fprintln(os.Stderr, "[dry-run] would apply golden-fleet OS/kernel limits — no changes made")
 		return nil
+	}
+	if !force {
+		fmt.Fprintln(os.Stderr, "[urnet-tools] apply golden-fleet OS/kernel limits to this host")
+		line, err := confirmStdinRead("Type 'yes' to continue: ")
+		if err != nil {
+			return fmt.Errorf("read confirmation: %w", err)
+		}
+		if strings.TrimSpace(line) != "yes" {
+			return fmt.Errorf("aborted (confirmation did not match)")
+		}
 	}
 	fmt.Println("optimize: applying golden-fleet network limits")
 	return optimizeFor(runtime.GOOS)()
@@ -691,9 +607,20 @@ func optimizeFor(goos string) func() error {
 // the two connection-churn knobs that matter most for a proxy box — the
 // ephemeral port pool (ip_local_port_range) and TIME_WAIT recycling
 // (tcp_fin_timeout). Conservative; failures are logged, never fatal.
+// If run as non-root, attempts sudo sysctl if sudo is available; otherwise
+// returns an actionable error pointing to the absolute binary path.
 func optimizeLinux() error {
+	var prefix []string
 	if os.Geteuid() != 0 {
-		return fmt.Errorf("optimize: sysctl requires root (running as uid %d); run with sudo or as root", os.Geteuid())
+		if _, err := exec.LookPath("sudo"); err == nil {
+			prefix = []string{"sudo"}
+		} else {
+			self, _ := os.Executable()
+			if self == "" {
+				self = "urnet-tools"
+			}
+			return fmt.Errorf("optimize: sysctl requires root (running as uid %d); run: sudo %s optimize", os.Geteuid(), self)
+		}
 	}
 	// Buffer + FD settings mirror the legacy do_optimize; the port range
 	// and TIME_WAIT knobs are new (proxy-scale outbound churn exhausts
@@ -704,8 +631,17 @@ func optimizeLinux() error {
 		{"-w", "net.ipv4.ip_local_port_range=1024 65535"},
 		{"-w", "net.ipv4.tcp_fin_timeout=15"},
 	} {
-		cmd := exec.Command("sysctl", args...)
+		cmdArgs := append(prefix, append([]string{"sysctl"}, args...)...)
+		cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
+		cmd.Stdin = os.Stdin
 		if out, err := cmd.CombinedOutput(); err != nil {
+			if len(prefix) > 0 && (strings.Contains(string(out), "password") || strings.Contains(string(out), "incorrect") || strings.Contains(string(out), "sudoers")) {
+				self, _ := os.Executable()
+				if self == "" {
+					self = "urnet-tools"
+				}
+				return fmt.Errorf("optimize: sysctl requires root (running as uid %d); run: sudo %s optimize", os.Geteuid(), self)
+			}
 			fmt.Fprintf(os.Stderr, "optimize: warning: sysctl %v failed: %v (%s)\n", args, err, strings.TrimSpace(string(out)))
 		}
 	}
