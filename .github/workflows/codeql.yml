@@ -13,7 +13,6 @@ jobs:
   analyze:
     name: Analyze
     runs-on: ubuntu-latest
-    if: github.repository == 'full-bars/urnetwork-3.23-fix'
 
     strategy:
       fail-fast: false

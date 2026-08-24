@@ -22,7 +22,6 @@ urnetwork-3.23-fix/
 │   ├── proxy_benchmark.go         # Opt-in staggered latency probing (TCP and SOCKS5)
 │   ├── proxy_match.go             # Pattern-based proxy removal (proxy remove --match)
 │   ├── contract_metrics.go        # Fleet-wide per-proxy contract history tracking
-│   ├── bandwidth_reporter.go      # Pushes periodic JSON telemetry to the Hub
 │   ├── important_log.go           # Important-event log (/dev/shm/urnetwork-important.log)
 │   ├── tlog.go                    # Thread-safe timestamped logging helpers
 │   ├── shmlog.go                  # Rolling ring-buffer RAM log (/dev/shm/urnetwork.log)
@@ -30,15 +29,8 @@ urnetwork-3.23-fix/
 │   ├── dup_linux_arm64.go         # ARM64 platform-specific stubs
 │   ├── dup_linux_generic.go       # Generic Linux platform-specific stubs
 │
-├── hub/
-│   ├── main.go                    # Standalone Bandwidth Hub server; provides :8080 JSON API and HTML dashboard
-│   ├── broadcaster.go             # SSE event broadcaster for live dashboard updates
-│   ├── proxy_api.go               # /api/proxies/* leaderboard and history endpoints
-│   ├── proxy_delta.go             # Delta-based proxy bandwidth ingestion and rollups
-│   └── store_db.go                # SQLite persistence for node/proxy history and snapshots
-│
 ├── scripts/
-│   └── Provider_Install_Linux.sh  # Bare-metal installer & `urnet-tools` CLI (hub, logs, optimize, proxy cmds)
+│   └── Provider_Install_Linux.sh  # Bare-metal installer & `urnet-tools` CLI (logs, optimize, proxy cmds)
 │
 ├── docker/
 │   └── scripts/                   # Docker-specific helper scripts (entrypoint.sh, start_*.sh, urnet-tools.sh, proxy-health.sh, proxy-traffic.sh, logs.sh)
@@ -95,9 +87,6 @@ urnetwork-3.23-fix/
 
 ### The Provider Node (`provider/`)
 The main worker. Binds to `api.bringyour.com` to authenticate and fetch a list of proxies. Our fork extends it with auto-tuning, health snapshots, outage webhooks, and the ability to hot-reload proxies without a full restart.
-
-### The Hub (`hub/`)
-A custom, zero-dependency Go binary built to solve fleet observability without requiring a full Prometheus/Grafana stack. Providers push their `[earn]` and bandwidth telemetry to the Hub, which aggregates and serves an HTML dashboard to operators.
 
 ### Installer & Tooling (`scripts/`)
 `Provider_Install_Linux.sh` doubles as the `urnet-tools` CLI. It manages systemd drop-ins, applies kernel optimizations (`urnet-tools optimize`), and bridges legacy `urnetwork` commands with modern enhancements.

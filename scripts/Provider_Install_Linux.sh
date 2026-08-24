@@ -67,7 +67,7 @@ show_help ()
     echo "  -f, --force             Skip confirmation prompts"
     echo "  -B, --no-modify-bashrc  Do not modify ~/.bashrc"
     echo ""
-    echo "Need help? Email support@fullbars.xyz or visit <https://github.com/${REPO}>"
+    echo "Need help? Visit <https://github.com/${REPO}>"
 }
 
 get_arch ()

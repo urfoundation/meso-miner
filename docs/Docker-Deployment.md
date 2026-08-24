@@ -50,7 +50,7 @@ ghcr.io/urfoundation/meso-miner:latest
 Docker Hub mirror:
 
 ```text
-3cape/urnetwork-3.23-fix:latest
+ghcr.io/urfoundation/meso-miner:latest
 ```
 
 Use the Docker Hub mirror if GHCR returns `denied` errors or rate-limiting.
@@ -171,7 +171,7 @@ docker run -d \
   -v urfix_vnstat:/var/lib/vnstat \
   -v /path/to/proxy.txt:/app/proxy.txt \
   -p 9001:8080 \
-  3cape/urnetwork-3.23-fix:latest AUTH_CODE_HERE
+  ghcr.io/urfoundation/meso-miner:latest AUTH_CODE_HERE
 ```
 
 Alternative method:
@@ -202,7 +202,7 @@ docker run -d \
   -v urfix_vnstat:/var/lib/vnstat \
   -v /path/to/proxy.txt:/app/proxy.txt \
   -p 9001:8080 \
-  3cape/urnetwork-3.23-fix:latest
+  ghcr.io/urfoundation/meso-miner:latest
 ```
 
 ## 🐙 Docker Compose
