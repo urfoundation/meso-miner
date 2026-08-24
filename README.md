@@ -7,7 +7,7 @@
 ![Language](https://img.shields.io/github/languages/top/urfoundation/meso-miner?labelColor=171717&color=FF570A)
 ![Activity](https://img.shields.io/github/commit-activity/m/urfoundation/meso-miner?labelColor=171717&color=FF570A)
 
-A high-performance, high-visibility fork of the **UrNetwork Connect** provider, based on the stable **v3.23** engine. Tuned for professional providers managing large proxy lists, high throughput, and production-grade operations.
+**Meso-Miner** is a community-maintained, high-performance provider for **UrNetwork**, originating from the **UrNetwork Connect v3.23** codebase and under active daily development ever since — extensively hardened, tuned, and extended well beyond upstream. Built for professional providers managing large proxy lists, high throughput, and production-grade operations.
 
 ## 🆚 What this fork changes vs upstream
 
