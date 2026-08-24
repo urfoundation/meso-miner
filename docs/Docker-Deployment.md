@@ -12,7 +12,7 @@ This page keeps the copy-paste Docker examples from the README in one place. Use
 Install `urnet-docker` once on the host (SHA-256 verified against the release API):
 
 ```sh
-curl -fSsL https://raw.githubusercontent.com/full-bars/meso-miner/refs/heads/main/scripts/install-urnet-docker.sh | sh
+curl -fSsL https://raw.githubusercontent.com/urfoundation/meso-miner/refs/heads/main/scripts/install-urnet-docker.sh | sh
 # installs /usr/local/bin/urnet-docker (or ~/.local/bin when not root)
 ```
 
@@ -44,7 +44,7 @@ urnet-docker logs --unit urfix 100              # stream logs (RAMLOGS-aware)
 Primary image:
 
 ```text
-ghcr.io/full-bars/meso-miner:latest
+ghcr.io/urfoundation/meso-miner:latest
 ```
 
 Docker Hub mirror:
@@ -74,7 +74,7 @@ docker run -d --name urfix \
   -e PROXY_URL='https://example.com/your-proxy-list.txt' \
   -e URNETWORK_PROXY_BENCHMARK=true \
   -e URNETWORK_PROXY_BENCHMARK_ENDPOINT=connect.bringyour.com:443 \
-  ghcr.io/full-bars/meso-miner:latest
+  ghcr.io/urfoundation/meso-miner:latest
 ```
 
 | Env var | Purpose |
@@ -105,7 +105,7 @@ docker run -d \
   -v urfix_vnstat:/var/lib/vnstat \
   -v /path/to/proxy.txt:/app/proxy.txt \
   -p 9001:8080 \
-  ghcr.io/full-bars/meso-miner:latest AUTH_CODE_HERE
+  ghcr.io/urfoundation/meso-miner:latest AUTH_CODE_HERE
 ```
 
 Replace `AUTH_CODE_HERE` with your token from [ur.io](https://ur.io). Auth codes are single-use; the token is saved to the `urfix_config` volume on first run and reused on later starts.
@@ -144,7 +144,7 @@ docker run -d \
   -v urfix_vnstat:/var/lib/vnstat \
   -v /path/to/proxy.txt:/app/proxy.txt \
   -p 9001:8080 \
-  ghcr.io/full-bars/meso-miner:latest
+  ghcr.io/urfoundation/meso-miner:latest
 ```
 
 ## 🏃 Docker Run - Docker Hub
@@ -216,7 +216,7 @@ For 3, 5, or 10 nodes in one Compose file, use the [Multi-Container Scaling](Mul
 ```yaml
 services:
   urnetwork:
-    image: ghcr.io/full-bars/meso-miner:latest
+    image: ghcr.io/urfoundation/meso-miner:latest
     container_name: urfix
     restart: unless-stopped
     pull_policy: always
@@ -262,7 +262,7 @@ docker compose up -d
 ```yaml
 services:
   urnetwork:
-    image: ghcr.io/full-bars/meso-miner:latest
+    image: ghcr.io/urfoundation/meso-miner:latest
     container_name: urfix
     restart: unless-stopped
     pull_policy: always
@@ -337,7 +337,7 @@ docker run -d \
   -v urfix_config:/root/.urnetwork \
   -v /path/to/proxy.txt:/app/proxy.txt \
   -p 9001:8080 \
-  ghcr.io/full-bars/meso-miner:latest YOUR_AUTH_CODE
+  ghcr.io/urfoundation/meso-miner:latest YOUR_AUTH_CODE
 ```
 
 Startup log:
@@ -380,7 +380,7 @@ docker run -d \
   -v urfix_vnstat:/var/lib/vnstat \
   -v /path/to/proxy.txt:/app/proxy.txt \
   -p 9001:8080 \
-  ghcr.io/full-bars/meso-miner:latest YOUR_AUTH_CODE
+  ghcr.io/urfoundation/meso-miner:latest YOUR_AUTH_CODE
 ```
 
 View logs live:
@@ -417,7 +417,7 @@ docker run -d \
   -v urfix_config:/root/.urnetwork \
   -v urfix_vnstat:/var/lib/vnstat \
   -v /path/to/proxy.txt:/app/proxy.txt \
-  ghcr.io/full-bars/meso-miner:latest YOUR_AUTH_CODE
+  ghcr.io/urfoundation/meso-miner:latest YOUR_AUTH_CODE
 ```
 
 **Status check:**
@@ -483,7 +483,7 @@ docker run -d \
   -v urfix_vnstat:/var/lib/vnstat \
   -v /path/to/proxy.txt:/app/proxy.txt \
   -p 9001:8080 \
-  ghcr.io/full-bars/meso-miner:latest YOUR_AUTH_CODE
+  ghcr.io/urfoundation/meso-miner:latest YOUR_AUTH_CODE
 ```
 
 > [!NOTE]

@@ -459,7 +459,7 @@ func updateProvider(p Provider, cfg updateConfig) error {
 
 	url := cfg.AssetURL
 	if url == "" {
-		url = fmt.Sprintf("https://github.com/full-bars/urnetwork-3.23-fix/releases/download/%s/urnetwork-provider-%s.tar.gz", cfg.Tag, cfg.Tag)
+		url = fmt.Sprintf("https://github.com/urfoundation/meso-miner/releases/download/%s/urnetwork-provider-%s.tar.gz", cfg.Tag, cfg.Tag)
 	}
 	tarball := filepath.Join(cfg.StageDir, cfg.Tag+".tar.gz")
 
@@ -805,7 +805,7 @@ func runningToolAssetName() (string, error) {
 
 // toolAssetURL is the release download URL for a tool asset.
 func toolAssetURL(tag, asset string) string {
-	return fmt.Sprintf("https://github.com/full-bars/urnetwork-3.23-fix/releases/download/%s/%s", tag, asset)
+	return fmt.Sprintf("https://github.com/urfoundation/meso-miner/releases/download/%s/%s", tag, asset)
 }
 
 // selfUpdateTool updates the running tool binary (urnet-tools or

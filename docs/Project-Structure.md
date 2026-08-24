@@ -44,13 +44,6 @@ urnetwork-3.23-fix/
 │   ├── scripts/                  # start_jwt.sh, start_stable.sh, start_nightly.sh, urnet-tools.sh
 │   └── ...                       # Selected by BUILD env var at container start
 │
-├── workers/                      # Cloudflare Worker sources (dl.fullbars.xyz + friends)
-│   ├── dl/                       # Script proxy + install.fullbars.xyz smart dispatcher/landing page
-│   ├── dl-fullbars/               # latest-version + releases/download GitHub release mirror
-│   ├── geo/                       # geo.fullbars.xyz — client geo/RTT info endpoint
-│   ├── provider-redirect/         # provider.fullbars.xyz -> GitHub 301 redirect
-│   └── README.md                  # Routes, deploy notes, wrangler usage
-│
 ├── cmd/                         # Go binaries (v3.23.0-fix.27.0+)
 │   ├── urnet-tools/             # Provider-aware fleet ops tool (process/systemd)
 │   └── urnet-docker/            # Container variant (docker exec delegation)
