@@ -1,4 +1,4 @@
-# ⛓ UrNetwork v3.23 Fix
+# ⛓ Meso Miner -- (Formerly UrNetwork v3.23 Fix)
 
 [![CodeRabbit Pull Request Reviews](https://img.shields.io/badge/CodeRabbit_Reviews-AI_PRs-FF570A?labelColor=171717&link=https%3A%2F%2Fcoderabbit.ai)](https://coderabbit.ai)
 [![CI](https://github.com/urfoundation/meso-miner/actions/workflows/build.yml/badge.svg)](https://github.com/urfoundation/meso-miner/actions)
@@ -8,6 +8,9 @@
 ![Activity](https://img.shields.io/github/commit-activity/m/urfoundation/meso-miner?labelColor=171717&color=FF570A)
 
 **Meso-Miner** is a community-maintained, high-performance provider for **UrNetwork**, originating from the **UrNetwork Connect v3.23** codebase and under active daily development ever since — extensively hardened, tuned, and extended well beyond upstream. Built for professional providers managing large proxy lists, high throughput, and production-grade operations.
+
+> [!NOTE]
+> Platform support: The Linux build is the most mature and well-tested implementation, with Docker close behind. Windows and macOS builds are available, but they haven't received nearly as much development or testing yet and may be rough around the edges.
 
 ## 🆚 What this fork changes vs upstream
 
