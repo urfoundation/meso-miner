@@ -29,7 +29,7 @@
 ---
 
 > [!WARNING]
-> **Experimental commands:** `provider claim`, `provider bind-head`, `provider unbind-head`, and
+> **Experimental Bittensor commands:** `provider claim`, `provider bind-head`, `provider unbind-head`, and
 > `provider wallet set` are experimental, the mechanism may change, and they are not recommended
 > for production use yet. Ported but not exercised against mainnet.
 
