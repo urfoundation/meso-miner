@@ -1,6 +1,6 @@
-# URNetwork 3.23-fix Fork — Custom Changes
+# meso-miner: Custom Changes
 
-This document tracks all modifications made to the upstream URNetwork v3.23 codebase in this fork. Use this as a reference when rebasing to newer upstream versions.
+This document tracks all modifications this line makes to the stock URNetwork code. Much of the older text below was written on the 3.23-fix line and describes it (for example the 3.23-fix Docker image names and the removed Hub); the sections after the "Inherited" note are the meso-miner changes. Use this as a reference when rebasing to newer upstream versions.
 
 **Fork Based On**: urnetwork/connect v3.23  
 **Repository**: github.com/urfoundation/meso-miner  
