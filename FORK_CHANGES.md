@@ -2118,7 +2118,7 @@ Zero added latency (still wakes on the next real notification) and structurally 
 **Purpose**:
 - `hub init` now checks `URNETWORK_HUB_TOKEN`/`URNETWORK_HUB_TOKEN_FILE`/`URNETWORK_HUB_TOKEN_STDIN` on startup and, if present, fetches the CA cert from `$HUB/ca-cert?token=...` automatically before doing anything else — removes a manual bootstrap step for new hub deployments.
 - The hub now watches `hub_ca.pem` via file poll and reloads the CA certificate on change without a restart, enabling live CA rotation.
-- New `URNETWORK_HUB_DASHBOARD_PASS` env var gates the dashboard (`/`) and read-only API endpoints behind HTTP Basic Auth. Independent of `URNETWORK_HUB_TOKEN` (which still protects the write endpoints) — see [docs/Hub-Setup.md](docs/Hub-Setup.md#locking-down-the-dashboard).
+- New `URNETWORK_HUB_DASHBOARD_PASS` env var gates the dashboard (`/`) and read-only API endpoints behind HTTP Basic Auth. Independent of `URNETWORK_HUB_TOKEN` (which still protects the write endpoints) — see `docs/Hub-Setup.md` (page removed).
 
 **Files Changed**: `hub/main.go`, `hub/onboard.go`, `hub/onboard_test.go`, `hub/main_test.go`, `provider/bandwidth_reporter.go`, `provider/bandwidth_reporter_ca_test.go`, `docs/Hub-Setup.md`
 
