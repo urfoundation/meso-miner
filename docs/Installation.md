@@ -40,8 +40,8 @@ urnet-tools proxy refresh
 
 ## 🧭 Other Platforms (Quick install)
 
-- **Alpine Linux (OpenRC):** the same install command, run from a root shell, installs a system service under `supervise-daemon`. See the [Alpine Linux (OpenRC) guide](https://github.com/urfoundation/meso-miner/wiki/OpenRC).
-- **FreeBSD:** installs an `rc.d` service from the FreeBSD installer script. See the [FreeBSD guide](https://github.com/urfoundation/meso-miner/wiki/FreeBSD).
+- **Alpine Linux (OpenRC):** the same install command, run from a root shell, installs a system service under `supervise-daemon`. See the [Alpine Linux (OpenRC) guide](OpenRC.md).
+- **FreeBSD:** installs an `rc.d` service from the FreeBSD installer script. See the [FreeBSD guide](FreeBSD.md).
 
 ## 🍎 macOS Installation
 

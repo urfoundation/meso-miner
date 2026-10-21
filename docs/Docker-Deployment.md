@@ -323,32 +323,6 @@ View a single-pane fleet overview showing proxy counts by source (file vs URL), 
 docker exec -it <container> provider proxy summary
 ```
 
-## 📡 Report URL (Deprecated)
-
-> [!WARNING]
-> **Deprecated (v31.3+):** Bandwidth hub reporting has been removed. The `report_url` file and `urnet-tools report` command are no longer functional. This section is retained for historical reference.
-
-Set or check the hub report URL at runtime without restarting. Uses `~/.urnetwork/report_url` inside the container:
-
-```sh
-# Set report URL
-docker exec -it <container> sh -c 'echo "http://HUB_IP:8080" > "$HOME/.urnetwork/report_url"'
-
-# Check current URL
-docker exec -it <container> sh -c 'cat "$HOME/.urnetwork/report_url" 2>/dev/null || echo "not set"'
-
-# Disable
-docker exec -it <container> sh -c 'rm -f "$HOME/.urnetwork/report_url"'
-```
-
-Or use the Go `urnet-docker` binary (v3.23.0-fix.27.0+) which handles `docker exec` transparently — it discovers provider containers and delegates commands into them:
-```sh
-urnet-docker report http://HUB_IP:8080
-urnet-docker report
-urnet-docker report off
-```
-(The legacy PowerShell wrapper `urnet-tools.ps1` has been retired; the Go binary replaces it on every platform.)
-
 ## ♻️ Hot-Restart
 
 Client JWTs are reused across restarts by default (no env var needed since v3.23.0-fix.26). The write path has been un-gated since v25.15, so JWTs were already being saved on every auth cycle — now the read path follows suit.

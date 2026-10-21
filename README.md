@@ -1,4 +1,4 @@
-# ⛓ UrNetwork v3.23 Fix
+# ⛓ meso-miner
 
 [![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/urfoundation/meso-miner?utm_source=oss&utm_medium=github&utm_campaign=urfoundation%2Fmeso-miner&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 [![CI](https://github.com/urfoundation/meso-miner/actions/workflows/build.yml/badge.svg)](https://github.com/urfoundation/meso-miner/actions)
@@ -7,41 +7,53 @@
 ![Language](https://img.shields.io/github/languages/top/urfoundation/meso-miner?labelColor=171717&color=FF570A)
 ![Activity](https://img.shields.io/github/commit-activity/m/urfoundation/meso-miner?labelColor=171717&color=FF570A)
 
-A high-performance, high-visibility fork of the **UrNetwork Connect** provider, based on the stable **v3.23** engine. Tuned for professional providers managing large proxy lists, high throughput, and production-grade operations.
+**meso-miner** is a provider for the [UrNetwork](https://ur.io) network, built for people who run many proxies and want to see what their machines are doing. It is the same tuned provider line as the 3.23-fix fork, released here for urfoundation, together with `urnet-tools`, a command-line helper that installs, updates and looks after your providers.
 
-## 🆚 What this fork changes vs upstream
+Releases are tagged `v<YYYY.M.D>-<unix>-meso` (for example `v2026.10.20-1076956260-meso`). The Docker image is `ghcr.io/urfoundation/meso-miner`. Not affiliated with the official UrNetwork project.
 
-| | Upstream | This fork |
+## 🧭 Start here
+
+New to this? Do these three things.
+
+1. **Install.** Pick the one-line installer for your system in [Install](#install) below (Linux, macOS, Windows or Docker).
+2. **Sign in.** Run `urnetwork auth` and paste an auth code from [app.ur.network](https://app.ur.network). Step by step: [Beginner guide](docs/guides/beginner.md).
+3. **Check it is running.** Run `urnet-tools status`. If something looks wrong, see [Troubleshooting](docs/Troubleshooting.md).
+
+You do not need to change any settings. The provider picks sensible defaults for your machine's memory. Come back to the table of guides further down when you want to go further.
+
+## 🆚 What meso-miner adds to the stock UrNetwork provider
+
+The "stock" column is the plain provider from the upstream URnetwork connect project (its last standalone `provider` command, before it moved into the `sn` repository). "Stock" here does not mean it lacks everything in this table, only what it ships with by default.
+
+| | Stock UrNetwork provider | meso-miner |
 | :--- | :--- | :--- |
-| Control-plane dial visibility | Debug-level glog (silent by default) | INFO — one line per successful backend dial (`[net][s]select`, control-plane not relay traffic) |
-| Contract sizing | Fixed 1 MiB initial, 4-contract ramp to 128 MiB standard | Profile-tuned initial size (256 KiB lowmem/balanced, 1 MiB default) with a faster 3-contract ramp |
-| Proxy startup | All at once | Jittered stagger with live `[pace]` warmup, plus a shared adaptive rate limiter that bounds aggregate auth load on the API |
-| Proxy changes | Restart required | Hot-reload via trigger file, zero downtime, with full added-proxy listing |
-| Dead proxy handling | Retry forever (15 min loop, no ceiling) | 24 h daily retry, 14-day drop (file) or 65 min cleanup (URL), persisted state |
-| Proxy source | Static file only | File and/or live URL feed, with scoped auto-cleanup |
-| Error noise | Log-level throttle (suppresses repeated lines) | Shared auth rate limiter reduces the error source itself — fewer API calls hit the failure path |
-| Proxy health grading | None | A–F reachability grade per proxy with continuous re-probing (`proxy health`, `proxy trim`) |
-| Fleet visibility & accounting | None | Built-in CLI accounting (`usage`, `proxy traffic`), persistent byte splits, and Prometheus metrics (`urnet-tools metrics on`) |
-| Performance profiles | None | Auto / Turbo V4 / Turbo V8 / Eco / Lowmem — memory, window, and GC tuned per profile |
-| Crash diagnostics | Journal-only, logs lost on restart | Shared-memory RAM logs (`shmlog`) + disk-based critical event log, panic hooks |
-| Custom API/connect backend | One-off `--api_url`/`--connect_url` flags only, re-passed on every invocation | `choose_network` persists the URLs to disk; flags still override per-call |
-| Runtime settings | Edit systemd drop-ins by hand, then restart | Live control socket (`~/.urnetwork/provider.sock`); changes apply without a restart and are queued in `pending_overrides.json` when the provider is stopped |
-| Binary upgrade | Stop, swap, start (20–60 s of downtime) | HotSwap handoff to a verified candidate, with automatic rollback: no gap where no provider process is running, though proxy connections still ramp back over about 30 s (requires a `Type=notify` unit, which `urnet-tools update` sets up; see [docs/HotSwap.md](docs/HotSwap.md)) |
-| Node identity on the dashboard | Hostname only | `rename` sets the display label and `show-ip` appends the public IP, both without a restart |
-| Multi-provider boxes | One provider per host, no targeting | One provider per OS user, with `providers` / `providers --all` inventory and cross-user `sudo` self-elevation |
-| Session migration | None | `session save` / `session load` exports identity + proxy state as an encrypted bundle for cross-machine transfer |
-| Subnet 25 telemetry | None | `sn-status` command with STSubnet operations guide, wallet registration, and head-fleet tiering docs |
-| Subnet 25 claims | Network token only | `provider claim` takes an explicit client credential (`--store-client`, `--provider-jwt` or `--legacy-coldkey`), and a failed renewal no longer replaces a client identity |
-| Memory-thrash recovery | None | Swap-thrash watchdog with a supervised exit-75 restart (systemd and containers both restart it; self-heal is the one switch) |
-| Windows operations | Not provided | `urnet-tools` runs natively on Windows: no `tail`, `sudo` or WSL, and its log follower survives rotation |
+| Dial visibility | The `[net][s]select` line is logged at INFO | Same line, now with the dial time, and repeated errors are collapsed with a "suppressed" count |
+| Contract sizing | 1 MiB first contract, 4 contracts to ramp up to 128 MiB | First contract is 128 KiB to 2 MiB depending on how much memory the machine has (2 MiB on bigger machines), with a faster 3-contract ramp |
+| Proxy startup | All at once | Staggered start with a live `[pace]` progress line, plus one shared rate limiter that keeps sign-in traffic to the API under control |
+| Proxy changes | Restart required | Add or remove proxies while running, with no downtime |
+| Dead proxy handling | Keeps retrying | Tries once a day, drops file proxies after 14 days (65 minutes for URL-fed ones), and remembers this across restarts |
+| Proxy source | A file you pass in | A file, a live URL feed, or both, with automatic clean-up |
+| Proxy health | None | A to F grade per proxy, re-checked continuously (`proxy health`, `proxy trim`) |
+| Fleet visibility | None | Traffic accounting in `usage` and `proxy traffic`, a live `top` view, and Prometheus metrics (`urnet-tools metrics on`) |
+| Performance profiles | None | Auto, Turbo V4, Turbo V8, Eco and Lowmem, each tuning memory and garbage collection |
+| Crash diagnostics | Logs lost on restart | RAM log in shared memory plus a critical-event log on disk |
+| Custom API backend | `--api_url` and `--connect_url` flags on every run | `choose_network` saves them to disk (flags still win) |
+| Changing settings | Edit service files by hand, then restart | A control socket applies changes live, and queues them if the provider is stopped |
+| Binary upgrade | Stop, swap, start (20 to 60 seconds of downtime) | HotSwap hands over to a verified new binary and rolls back on failure. See [HotSwap](docs/HotSwap.md) |
+| Display name | Hostname only | `rename` sets the label, `show-ip` adds the public IP, no restart |
+| Several providers on one machine | One per host | One per OS user, listed with `providers` and `providers --all` |
+| Moving machines | None | `session save` and `session load` move identity and proxies as an encrypted bundle |
+| Subnet 25 | `wallet set`, `claim` and `bind-head` | Adds `sn-status`, and `claim` can use a stored client credential (`--store-client`, `--provider-jwt`, `--legacy-coldkey`) |
+| Memory trouble | None | A swap-thrash watchdog restarts the provider cleanly (exit 75) |
+| Windows | No management tool | `urnet-tools` runs natively on Windows |
 
 ---
 
-## 🗺 Start Here
+## 🗺 Guides
 
 | If you want to... | Go here |
 | :--- | :--- |
-| **Start here — pick your skill level** | [🐣 Beginner](docs/guides/beginner.md) · [🧭 Intermediate](docs/guides/intermediate.md) · [🚀 Advanced](docs/guides/advanced.md) |
+| **Pick your skill level** | [🐣 Beginner](docs/guides/beginner.md) · [🧭 Intermediate](docs/guides/intermediate.md) · [🚀 Advanced](docs/guides/advanced.md) |
 | Install on a Linux host as a user-level service | [Installation Guide](docs/Installation.md) |
 | Run one Docker container | [Docker Deployment](docs/Docker-Deployment.md) |
 | Run multiple containers on one host | [Multi-Container Scaling](docs/Multi-Container-Scaling.md) |
@@ -132,7 +144,7 @@ On Windows, run the same commands in PowerShell but use a Windows path, e.g.
 walkthrough, including the `.txt.txt` extension trap: [Adding Proxies](docs/Adding-Proxies.md).
 
 > [!NOTE]
-> Since v3.23.0-fix.27.0, `urnet-tools` is a provider-aware Go binary (the legacy POSIX shell + PowerShell variants are retired). It discovers every provider on the box and **refuses to act on an ambiguous target** — on multi-provider machines, pass `--unit` / `--user` / `--network` / `--network-id` / `--state-dir`. See [docs/urnet-tools-go.md](docs/urnet-tools-go.md).
+> `urnet-tools` is a provider-aware Go binary (the legacy POSIX shell + PowerShell variants are retired). It discovers every provider on the box and **refuses to act on an ambiguous target** — on multi-provider machines, pass `--unit` / `--user` / `--network` / `--network-id` / `--state-dir`. See [docs/urnet-tools-go.md](docs/urnet-tools-go.md).
 >
 > Docker-only deployments: the provider runs in a container, but the management tool (`urnet-docker`) runs **on the docker host, outside the container**. Install it with the one-liner above (use `curl -fSsL https://raw.githubusercontent.com/urfoundation/meso-miner/refs/heads/main/scripts/install-urnet-docker.sh | sh -s -- urnet-tools` for the systemd variant). The tool self-updates afterward (`urnet-docker update`).
 
@@ -251,7 +263,7 @@ See [Docker Deployment](docs/Docker-Deployment.md) for Docker Compose, email/pas
 
 ---
 
-## 📡 Telemetry & Legacy Fleet Dashboard
+## 📡 Telemetry
 
 UrNetwork Connect provides rich standalone metrics directly via `urnet-tools usage` and `urnet-docker usage` (billable vs control plane accounting with hour/day/month historical graphs).
 
@@ -260,9 +272,6 @@ restart and prints the address to scrape: loopback plus the machine's Tailscale
 address by default, or any address you choose with `urnet-tools metrics listen`.
 The `monitoring/` bundle runs Prometheus and Grafana with a ready-made fleet
 dashboard. See [Monitoring](docs/Monitoring.md).
-
-> [!NOTE]
-> **Fleet Dashboard (Deprecated):** The multi-node aggregation hub dashboard has been removed as of v31.3+. For fleet-wide visibility, use Prometheus metrics (`urnet-tools metrics on`) with the [Monitoring bundle](docs/Monitoring.md), or Grafana for custom dashboards. Historical documentation is retained at [Hub Setup](docs/Hub-Setup.md) and [Hub Dashboard](docs/Hub-Dashboard.md) for reference.
 
 ---
 
@@ -288,23 +297,16 @@ dashboard. See [Monitoring](docs/Monitoring.md).
 - [Proxy Management & Hot-Reload](docs/Proxy-Management.md)
 - [High-Volume Performance Tuning](docs/High-Volume-Performance-Tuning.md)
 - [Monitoring](docs/Monitoring.md)
-- [Hub Setup](docs/Hub-Setup.md) *(deprecated — removed in v31.3+)*
-- [Hub Dashboard](docs/Hub-Dashboard.md) *(deprecated — removed in v31.3+)*
 - [Project Structure](docs/Project-Structure.md)
 - [Log Message Reference](LOG_REFERENCE.md)
 - [Go urnet-tools Reference](docs/urnet-tools-go.md)
 - [Changelog](CHANGELOG.md)
 
-**Wiki:**
-
-- [Online GitHub Wiki](https://github.com/urfoundation/meso-miner/wiki)
-- [CI and Release Process](https://github.com/urfoundation/meso-miner/wiki/CI-and-Release-Process)
-
 ---
 
 ## 🏗 Build Info
 
-- **Base engine:** UrNetwork v3.23
+- **Base engine:** the 3.23-fix provider line, brought level with it by the v34 parity port. The stock UrNetwork provider is the comparison point in the table above
 - **Language:** Go 1.27, compiled on Alpine
 - **Platforms:** Linux (systemd, and Alpine/OpenRC with a native boot-start service), macOS, Windows and FreeBSD. Alpine setup: [docs/OpenRC.md](docs/OpenRC.md); FreeBSD setup: [docs/FreeBSD.md](docs/FreeBSD.md)
 - **Images:** Multi-arch `linux/amd64` + `linux/arm64`, `darwin/amd64` + `darwin/arm64` via GitHub Actions → GHCR
@@ -312,5 +314,5 @@ dashboard. See [Monitoring](docs/Monitoring.md).
 
 ---
 
-> [!WARNING]
-> This is a private, custom modification for professional provider use. Not affiliated with the official UrNetwork project.
+> [!NOTE]
+> meso-miner is a custom build for professional provider use. It is not affiliated with the official UrNetwork project.
