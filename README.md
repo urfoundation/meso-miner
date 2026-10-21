@@ -49,10 +49,23 @@ The "stock" column is the plain provider from the upstream URnetwork connect pro
 
 ---
 
+## ₿ Bittensor Subnet 25
+
+Most operators need to do one thing: sign a single wallet message, once, from their own computer. Your nodes do not change. Everything else here (hotkeys, claim daemons, fleets, multiple operators) is optional or advanced, and skipping it costs you nothing. Nothing here runs unless you start it.
+
+- [Bittensor Quick Start](docs/Bittensor-Quick-Start.md): start here. Check where you stand, sign once, and see which commands you can ignore.
+- [Bittensor operations](docs/Bittensor-Operations.md): the overview, from the two tiers and wallet consent through claims and the FAQ.
+- [Bittensor head tier](docs/Bittensor-Head-Tier.md): the optional, advanced tier. Most operators should skip it.
+- [Bittensor glossary](docs/Bittensor-Glossary.md): plain meanings of the words.
+- [Bittensor claim daemons](docs/Bittensor-Claim-Daemons.md), [fleet](docs/Bittensor-Fleet.md), [hotkey delegation](docs/Bittensor-Hotkey-Delegation.md) and [multi-operator](docs/Multi-Operator.md): optional or advanced.
+
+---
+
 ## 🗺 Guides
 
 | If you want to... | Go here |
 | :--- | :--- |
+| **Get paid on Bittensor SN25 (do I need to do anything?)** | [Bittensor Quick Start](docs/Bittensor-Quick-Start.md) |
 | **Pick your skill level** | [🐣 Beginner](docs/guides/beginner.md) · [🧭 Intermediate](docs/guides/intermediate.md) · [🚀 Advanced](docs/guides/advanced.md) |
 | Install on a Linux host as a user-level service | [Installation Guide](docs/Installation.md) |
 | Run one Docker container | [Docker Deployment](docs/Docker-Deployment.md) |
