@@ -1,4 +1,4 @@
-# Pelican egg — UrNetwork (full-bars 3.23-fix)
+# Pelican egg: meso-miner
 
 Pelican panel support for the hardened provider image.
 

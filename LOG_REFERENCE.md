@@ -501,7 +501,7 @@ An hourly retry sweep is performed to wake stalled transports. This marker logs 
 
 ---
 
-## 🔀 Outbound Connection Health (3.23-fix variant)
+## 🔀 Outbound Connection Health
 
 ```
 [net][s]select: proxy[42] (1.2.3.4:1081) [fragment] success=6086 error=192 clients=0
@@ -509,7 +509,7 @@ An hourly retry sweep is performed to wake stalled transports. This marker logs 
 [net][s]select: direct success=171 error=3
 ```
 
-Logged at INFO level in the 3.23-fix fork (promoted from debug level 2). Each line fires when the **provider itself** makes an outbound API call or WebSocket dial to the URnetwork platform (e.g. `api.bringyour.com/connect/control`) and records which route was used. This is the provider's own control-plane traffic, **not** end-user relay traffic.
+Logged at INFO level. Each line fires when the **provider itself** makes an outbound API call or WebSocket dial to the URnetwork platform (e.g. `api.bringyour.com/connect/control`) and records which route was used. This is the provider's own control-plane traffic, **not** end-user relay traffic.
 
 > [!IMPORTANT]
 > `success` and `clients` measure completely different things and do not correlate. A proxy with `success=5000 clients=0` is healthy and talking to the platform — it just has no users assigned to it right now. The platform decides which providers serve which clients.
@@ -618,7 +618,7 @@ Emitted on the earning tick only while transit traffic is actively flowing (sile
 
 ---
 
-## 💰 Profit Heartbeat (3.23-fix)
+## 💰 Profit Heartbeat
 
 ```
 [profit] earning=yes reason=- clients=4 rate=2.1 MB/s proxies_up=12 serving=3 idle=9
@@ -641,7 +641,7 @@ To keep quiet periods from flooding the log, `earning=no` lines throttle to **on
 
 ---
 
-## 📈 Earning Windows & Utilization (3.23-fix)
+## 📈 Earning Windows & Utilization
 
 ```
 [earn] billable_1m=4.2 MB billable_5m=31 MB billable_15m=88 MB billable_60m=402 MB active=yes
@@ -674,7 +674,7 @@ Persists the current billable transfer rate to `~/.urnetwork/billable_rate` on a
 
 ---
 
-## 📑 Contract Lifecycle (3.23-fix)
+## 📑 Contract Lifecycle
 
 ```
 [contract] acquired size=256 KiB destination=0142...c3a9

@@ -1,5 +1,8 @@
 # H3 + Miner Migration Plan (Bittensor/SN future)
 
+> [!NOTE]
+> Historical planning record. It was written on the 3.23-fix line, whose work meso-miner has since been brought level with (the v34 parity port). Read it as background, not as a to-do list for this repo.
+
 Status: SEEDED — facts verified 2026-09-15, branch carries the plan + workspaces scaffold.
 
 ## Why
@@ -39,7 +42,7 @@ Local workspace of sibling checkouts so `go build ./...` in sn/miner works:
 The daemon features that live in fork `provider/` today, rewritten onto the v2026 API surface:
 1. Pool health heartbeat + leak detection (`provider/pool_health.go`) — v2026 has `message_pool_ownership_test.go`/violation handler; map counters onto the new pool.
 2. Resource-pressure actuator (memory scaling) — v2026 memory_budget.go + sn provider_memory.go (host-derived targets) replace the fork's static GOMEMLIMIT.
-3. Earnings store + priority, contract-sizing profile, R-5 retention cap — port the fork's transfer-side fixes that still apply (audited: 2 MUST PORTs already landed on 3.23-fix; re-verify against v2026 final).
+3. Earnings store + priority, contract-sizing profile, R-5 retention cap — port the fork's transfer-side fixes that still apply (audited: 2 MUST PORTs already landed on the 3.23-fix line; re-verify against v2026 final).
 4. Startup banner, proxy health grading, CFAA sync — mostly additive to the daemon.
 
 ### Phase 3 — Carry the ops tooling (layer 2)
