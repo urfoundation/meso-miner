@@ -1,13 +1,22 @@
 name: SN25 live numbers
 
 # The cost table on the Bittensor head-tier page is generated from live chain
-# state. This job refreshes it hourly and commits straight to main, so nobody
-# has to review a number change. When the values are unchanged the job writes
-# nothing and makes no commit.
+# state. It commits straight to main, so nobody has to review a number change.
+# When the values are unchanged the job writes nothing and makes no commit.
+#
+# GitHub runs scheduled jobs best effort and can start them hours late or skip
+# them, so there are three triggers: two off-peak schedules (not the start of
+# the hour, which GitHub names as the busiest time), a run whenever main gets a
+# push, and a manual run. The commit this job makes uses the workflow token, and
+# pushes made with that token do not start new runs, so the push trigger cannot
+# loop.
 
 on:
   schedule:
-    - cron: '7 * * * *'
+    - cron: '23 * * * *'
+    - cron: '47 * * * *'
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -32,6 +41,28 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Import the CI signing key
+        env:
+          CI_GPG_PRIVATE_KEY: ${{ secrets.CI_GPG_PRIVATE_KEY }}
+        run: |
+          # Every commit this job makes must be signed. A missing key stops the
+          # job instead of letting it push unsigned commits.
+          if [ -z "$CI_GPG_PRIVATE_KEY" ]; then
+            echo "CI_GPG_PRIVATE_KEY is not set; refusing to commit unsigned" >&2
+            exit 1
+          fi
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          printf '%s\n' "$CI_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
+          KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
+          [ -n "$KEYID" ] || { echo "no secret key was imported" >&2; exit 1; }
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          # Global, so the rebase in the retry loop and the wiki clone below
+          # sign the commits they create too.
+          git config --global gpg.format openpgp
+          git config --global user.signingkey "$KEYID"
+          git config --global commit.gpgsign true
+
       - name: Refresh the generated block
         run: python3 .github/scripts/bittensor_live_numbers.py --write
 
@@ -45,10 +76,11 @@ jobs:
           fi
           git config user.name "full-bars"
           git config user.email "45684698+full-bars@users.noreply.github.com"
-          git commit -am "docs(bittensor): refresh the SN25 live numbers"
+          git commit -S -am "docs(bittensor): refresh the SN25 live numbers"
           # main can move while this job runs; rebase and retry instead of
           # dropping the refresh.
           for _ in 1 2 3; do
+            git verify-commit HEAD || { echo "refusing to push an unsigned commit" >&2; exit 1; }
             if git push origin HEAD:main; then
               echo "changed=true" >> "$GITHUB_OUTPUT"
               exit 0
@@ -72,5 +104,6 @@ jobs:
             echo "Wiki page already carries these values."
             exit 0
           fi
-          git commit -m "docs: sync the SN25 live numbers"
+          git commit -S -m "docs: sync the SN25 live numbers"
+          git verify-commit HEAD || { echo "refusing to push an unsigned commit" >&2; exit 1; }
           git push origin master
