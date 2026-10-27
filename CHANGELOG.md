@@ -47,6 +47,28 @@ Everything merged after `v2026.10.22-1078667370-meso`.
 - **The Docker wrapper is labelled optional but recommended** ([#283](https://github.com/full-bars/meso-miner/pull/283)).
 - **The v2026.10.22 release notes were corrected** ([#274](https://github.com/full-bars/meso-miner/pull/274), [#279](https://github.com/full-bars/meso-miner/pull/279), [#281](https://github.com/full-bars/meso-miner/pull/281)): duplicated sections merged, the previous release named, and the stop caveat now cites the container stop harness and the shakedown's X3 check.
 
+## [v2026.10.24-1080497440-meso] — 2026-10-24
+
+### Added
+
+- **Extender v2 serving and VLESS/Reality carriers** ([#39](https://github.com/urfoundation/meso-miner/pull/39)): the provider can serve the extender role through its direct slot, backed by signed records, a directory, feed and gossip paths, and TCP, QUIC and DNS carriers. The same port adds a VLESS/Reality client carrier.
+- **The proxy trim cap is visible in status** ([#33](https://github.com/urfoundation/meso-miner/pull/33)): `urnet-tools proxy trim` and the live status block report the effective cap and its source.
+
+### Fixed
+
+- **H3 traffic now counts against the governor's byte and attempt budgets** (`dd32fd946`): QUIC dial bytes are charged, H3 waiters no longer inherit the parked flag, and transport classification does not rely on unavailable H3 stats.
+- **The disk benchmark uses a bounded time sample** ([#51](https://github.com/urfoundation/meso-miner/pull/51)): it samples for a fixed interval instead of reporting a short burst and stores enough shape data to decide when a new sample is needed.
+- **OOM-cap decisions preserve the last written state** ([#52](https://github.com/urfoundation/meso-miner/pull/52), [#53](https://github.com/urfoundation/meso-miner/pull/53), [#54](https://github.com/urfoundation/meso-miner/pull/54)): a failed write is reported and cannot advance the persisted cap timeline.
+
+### Security
+
+- **The FreeBSD installer refuses shell-rc symlinks and unsafe paths** ([#46](https://github.com/urfoundation/meso-miner/pull/46), [#47](https://github.com/urfoundation/meso-miner/pull/47), [#48](https://github.com/urfoundation/meso-miner/pull/48)): root no longer follows a service user's shell-rc link, and installer path changes are checked before writing.
+- **A Windows hotkey-wallet write is not reported failed after it lands** ([#45](https://github.com/urfoundation/meso-miner/pull/45)): directory syncing uses the platform-aware durable-sync helper.
+
+### CI
+
+- **Installer shell-rc checks run in CI** ([#50](https://github.com/urfoundation/meso-miner/pull/50)): the symlink test runs alongside the installer checks.
+
 ## [v2026.10.22-1078667370-meso] — 2026-10-22
 
 ### Added
@@ -162,7 +184,7 @@ Everything merged after `v2026.10.22-1078667370-meso`.
 
 ---
 
-## [v2026.10.19-1075696970-meso] — 2026-10-19
+## [v2026.10.19-1075696970-meso] — 2026-10-19 (`full-bars/meso` tag)
 
 ### Added
 
@@ -198,7 +220,7 @@ Everything merged after `v2026.10.22-1078667370-meso`.
 
 ---
 
-## [v2026.10.6-1064547980-meso] — 2026-10-06
+## [v2026.10.6-1064547980-meso] — 2026-10-06 (`full-bars/meso` tag)
 
 ### Added
 
@@ -273,7 +295,7 @@ Everything merged after `v2026.10.22-1078667370-meso`.
 
 ---
 
-## [v2026.9.22-1052862940-meso] — 2026-09-22
+## [v2026.9.22-1052862940-meso] — 2026-09-22 (`full-bars/meso` tag; same name also on `full-bars/sn`)
 
 ### Fixed
 
@@ -337,7 +359,7 @@ Everything merged after `v2026.10.22-1078667370-meso`.
 
 ---
 
-## [v2026.9.18-1049118720-meso] — 2026-09-18
+## [v2026.9.18-1049118720-meso] — 2026-09-18 (`full-bars/meso` tag; same name also on `full-bars/sn`)
 
 ### Added
 - **Full parity port (PR #92, #93, #94)**: provider runtime (zero-downtime HotSwap, UNIX control socket with live overrides, Prometheus `/metrics` endpoint, dynamic state overrides, earnings-aware proxy prioritization, audit ring buffer, systemd `Type=notify`), the complete urnet-tools CLI (`config`, `hotswap`, `history`, `lifecycle`, `metrics`, `profile`, `proxy_ids`, `ramlogs`, `dashboard`), all fork test suites, and the Prometheus/Grafana monitoring bundle.
@@ -351,13 +373,13 @@ Everything merged after `v2026.10.22-1078667370-meso`.
 
 ---
 
-## [v2026.9.9-1788916951-meso] — 2026-09-09
+## [v2026.9.9-1788916951-meso] — 2026-09-09 (`full-bars/meso` tag)
 
 Full parity with the 3.23-fix v30.9 line: warm proxy prioritization, `sn-status`, and security hardening. The same code was also published as `v2026.9.9-1788917009-meso-hub`, a variant that kept the old hub; the hub has since been removed.
 
 ---
 
-## [v2026.8.28-1031582360-meso] — 2026-08-28
+## [v2026.8.28-1031582360-meso] — 2026-08-28 (`full-bars/meso` tag)
 
 Fixes the endless retry loop on dead proxies, makes Docker self-update fetch from this repository, and adds Pelican egg support. Two earlier builds the same day, `v2026.8.28-1031544720-meso` and `v2026.8.28-1031579830-meso`, carry the same release notes. See `releases/v2026.8.28-1031582360-meso.md`.
 
