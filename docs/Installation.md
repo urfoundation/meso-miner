@@ -34,7 +34,7 @@ curl -fSsL https://raw.githubusercontent.com/urfoundation/meso-miner/refs/heads/
 The Linux installer needs a downloader (`curl` or `wget`) and a JSON parser (`jq` or `python3`). On a minimal host that lacks one, it installs only what is missing through the host's package manager (apt, dnf, yum, zypper, pacman or apk), using `sudo` when you are not root. Amazon Linux 2 has no `dnf`, so the installer uses `yum` there. Set `URNET_NO_AUTOINSTALL=1` to stop the installer from installing anything: it prints that it is not installing the tool and then stops with a message telling you what to install, so you can do it yourself.
 
 ```bash
-curl -fSsL https://raw.githubusercontent.com/full-bars/meso-miner/refs/heads/main/scripts/Provider_Install_Linux.sh | URNET_NO_AUTOINSTALL=1 sh
+curl -fSsL https://raw.githubusercontent.com/urfoundation/meso-miner/refs/heads/main/scripts/Provider_Install_Linux.sh | URNET_NO_AUTOINSTALL=1 sh
 ```
 
 ### 🔑 Post-Install Authentication
@@ -52,7 +52,7 @@ urnet-tools proxy refresh
 > **Path Formatting**
 > You can use either `~/proxies.txt` or `/home/you/proxies.txt`. Both syntaxes work.
 
-> Full proxy-loading walkthrough (including Windows): [Adding Proxies](Adding-Proxies.md).
+> Full proxy-loading walkthrough (including Windows): [Adding Proxies](/urfoundation/meso-miner/wiki/Adding-Proxies).
 
 ## 🧭 Other Platforms (Quick install)
 
@@ -127,7 +127,7 @@ Unlike traditional services that run as root, this build defaults to a **systemd
 
 ## 🛠️ Post-Install Commands
 
-The installation includes the `urnet-tools` suite for management. Since v3.23.0-fix.27.0 (inherited from the 3.23-fix line) this is the **provider-aware Go binary** — on multi-provider machines, pass a target (`--unit` / `--user` / `--network` / `--network-id` / `--state-dir`) or the tool refuses. See [urnet-tools-go.md](urnet-tools-go.md).
+The installation includes the `urnet-tools` suite for management. Since v3.23.0-fix.27.0 (inherited from the 3.23-fix line) this is the **provider-aware Go binary** — on multi-provider machines, pass a target (`--unit` / `--user` / `--network` / `--network-id` / `--state-dir`) or the tool refuses. See [urnet-tools-go.md](/urfoundation/meso-miner/wiki/urnet-tools-go).
 
 | Command | Description |
 | :--- | :--- |
@@ -224,7 +224,7 @@ urnet-tools session load C:\Users\You\backup.urnsession
 urnet-tools update
 ```
 
-> See [Adding Proxies](Adding-Proxies.md) for per-OS proxy-loading instructions and the Windows `.txt.txt` extension trap.
+> See [Adding Proxies](/urfoundation/meso-miner/wiki/Adding-Proxies) for per-OS proxy-loading instructions and the Windows `.txt.txt` extension trap.
 
 ### `urnet-tools` on Windows
 

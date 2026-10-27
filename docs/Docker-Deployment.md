@@ -76,7 +76,7 @@ docker run -d --name urfix \
 
 | Env var | Purpose |
 |---|---|
-| `PROXY_URL` | Live proxy list URL, fetched and merged on interval (see [Proxy URL Sources](Proxy-URL-Sources.md)) |
+| `PROXY_URL` | Live proxy list URL, fetched and merged on interval (see [Proxy URL Sources](/urfoundation/meso-miner/wiki/Proxy-URL-Sources)) |
 | `URNETWORK_PROXY_BENCHMARK=true` | Enables per-proxy latency probes (TCP connect every 5m, SOCKS5 every 15m) |
 | `URNETWORK_PROXY_BENCHMARK_ENDPOINT` | Target for SOCKS5 CONNECT probe (default `connect.bringyour.com:443`) |
 
@@ -194,7 +194,7 @@ docker run -d \
 
 For another single-container deployment on the same host, copy your `docker-compose.yml` to a new folder and replace the `urfix` prefix with a unique name in `container_name`, `volumes`, and the top-level `volumes:` section.
 
-For 3, 5, or 10 nodes in one Compose file, use the [Multi-Container Scaling](Multi-Container-Scaling.md) guide.
+For 3, 5, or 10 nodes in one Compose file, use the [Multi-Container Scaling](/urfoundation/meso-miner/wiki/Multi-Container-Scaling) guide.
 
 ### 🔐 JWT Auth
 
@@ -278,7 +278,7 @@ Setting `URNETWORK_RAMLOGS=1` redirects provider logs to `/dev/shm/urnetwork.log
 > **Live Monitoring (RAMLOGS)**
 > If you have `URNETWORK_RAMLOGS=1` enabled, your logs are stored in high-speed memory instead of standard output. Use this command to live-tail them:
 > ```bash
-> docker exec -it <container_name> tail -f /dev/shm/urnetwork.log
+> docker exec -it <container_name> tail -F /dev/shm/urnetwork.log
 > ```
 
 > [!NOTE]
@@ -310,7 +310,7 @@ docker run -d \
 View logs live:
 
 ```bash
-docker exec -it urfix tail -f /dev/shm/urnetwork.log
+docker exec -it urfix tail -F /dev/shm/urnetwork.log
 ```
 
 RAM logs are capped at 1MB with automatic rotation and are lost when the container restarts.
@@ -325,7 +325,7 @@ docker exec -it <container> provider proxy summary
 
 ## ♻️ Hot-Restart
 
-Client JWTs are reused across restarts by default (no env var needed since v3.23.0-fix.26). The write path has been un-gated since v25.15, so JWTs were already being saved on every auth cycle, and the read path now follows suit. What is stored, how to inspect it, and what mints a new identity: [Hot-Restart.md](Hot-Restart.md).
+Client JWTs are reused across restarts by default (no env var needed since v3.23.0-fix.26). The write path has been un-gated since v25.15, so JWTs were already being saved on every auth cycle, and the read path now follows suit. What is stored, how to inspect it, and what mints a new identity: [Hot-Restart.md](/urfoundation/meso-miner/wiki/Hot-Restart).
 
 **Disabling:**
 ```bash
@@ -378,7 +378,7 @@ The load will prompt for the passphrase, check the network_id against the curren
 You can view the full list of never-up and dropped proxies, as well as a live event log of proxy state transitions. These files persist on the config volume and survive container restarts, even if RAM logging is active.
 
 - Persistent (always): `docker exec -it <container> proxy-health`
-- Live-tail RAMLOGS on: `docker exec -it <container> sh -c "tail -f /dev/shm/urnetwork.log | grep -E '\[health\]\[proxies\]|\[pulse\]'"`
+- Live-tail RAMLOGS on: `docker exec -it <container> sh -c "tail -F /dev/shm/urnetwork.log | grep -E '\[health\]\[proxies\]|\[pulse\]'"`
 - Live-tail RAMLOGS off: `docker logs -f <container> 2>&1 | grep -E '\[health\]\[proxies\]|\[pulse\]'`
 
 ## 🏎️ Auto-Tune Performance
@@ -564,7 +564,7 @@ This brings up:
 
 The metrics endpoint is enabled by default — no environment variables are needed. To disable it on a specific container, add `-e URNETWORK_METRICS=0`.
 
-See also the [Configuration](Configuration.md#-monitoring--telemetry) reference for the full list of telemetry variables.
+See also the [Configuration](/urfoundation/meso-miner/wiki/Configuration#-monitoring--telemetry) reference for the full list of telemetry variables.
 
 ## 🐦 Pelican Panel
 
@@ -616,7 +616,7 @@ The egg ships with automated CI checks (`docker/scripts/test_pelican_gates.sh` f
 
 ## Letting the Thrash Watchdog Restart the Container's Provider
 
-The swap-thrash watchdog ([details](Configuration.md#swap-thrash-watchdog)) restarts the provider by exiting with status 75. Inside a container that is allowed only when you opt in, because only you know that the container restarts the provider afterwards:
+The swap-thrash watchdog ([details](/urfoundation/meso-miner/wiki/Configuration#swap-thrash-watchdog)) restarts the provider by exiting with status 75. Inside a container that is allowed only when you opt in, because only you know that the container restarts the provider afterwards:
 
 ```yaml
 services:

@@ -610,41 +610,48 @@ RCSCRIPT
         if [ -L "$shell_rc" ]; then
             pr_warn "Refusing to edit %s: it is a symlink. Add %s/bin to PATH by hand" "$shell_rc" "$install_path"
         else
-            # Everything below runs AS THE SERVICE USER, and WHICH command runs
-            # it is chosen BEFORE the heredoc. Root must not reopen a path
-            # inside a directory that user owns (the name can be swapped for a
-            # link after the check above), so root hands the whole edit over
-            # with su, which needs no password. When the installer already runs
-            # AS that user, su would prompt for a password and hang an
-            # unattended install, so the same script goes straight to /bin/sh.
-            # Any other caller is warned and the edit skipped: the provider is
-            # installed by now, so a missing PATH hint must never fail it.
+            # Everything below runs AS THE SERVICE USER. Root must not reopen a
+            # path inside a directory that user owns: between the check above
+            # and any root cat/chmod/chown/mv the name can be swapped for a
+            # link, and root would follow it. The owner editing their own rc
+            # crosses no privilege boundary, so the whole edit — copy, append,
+            # mode, rename — is handed over and root only reports on it.
             #
-            # The script goes in on stdin and is run by /bin/sh explicitly.
-            # `su -c` would otherwise hand it to the login shell, and a tcsh
-            # service user cannot parse POSIX sh. The login name must come
-            # BEFORE -c: FreeBSD reads an earlier -c as a login class, not as
-            # the command (its -m keeps the environment, so these assignments
-            # reach the script).
+            # WHO runs it is chosen here, before the heredoc, because `su` is
+            # not free: as root it is the hop that keeps root out of the user's
+            # directory, but for any other caller it stops the install at a
+            # password prompt. Root su's to the service user; that user — the
+            # only other account allowed to write the file — runs /bin/sh
+            # directly; anyone else gets a warning and the rc is left alone.
+            # The provider is already installed at this point, so never fail.
+            shellrc_how=skip
+            if [ "$(id -u)" = 0 ]; then
+                shellrc_how=su
+            elif [ "$(id -un)" = "$service_user" ]; then
+                shellrc_how=direct
+            fi
             case "$_shell" in
                 */tcsh|*/csh) rc_line="setenv PATH \"$install_path/bin:\$PATH\"" ;;
                 *)      rc_line="export PATH=\"$install_path/bin:\$PATH\"" ;;
             esac
-            # The heredoc hangs off the whole if, so the script body below is
-            # written once and whichever branch runs receives it on stdin.
-            if [ "$(id -u)" = 0 ]; then
-                SHELLRC_RC="$shell_rc" SHELLRC_LINE="$rc_line" SHELLRC_BIN="$install_path/bin" \
-                    su -m "$service_user" -c '/bin/sh -s'
-                shellrc_status=$?
-            elif [ "$(id -u)" = "$(id -u "$service_user" 2>/dev/null)" ]; then
-                SHELLRC_RC="$shell_rc" SHELLRC_LINE="$rc_line" SHELLRC_BIN="$install_path/bin" \
-                    /bin/sh -s
-                shellrc_status=$?
+            # The script goes in on stdin and is run by /bin/sh explicitly.
+            # `su -c` would otherwise hand it to the login shell, and a tcsh
+            # service user cannot parse POSIX sh. The login name must come
+            # BEFORE -c: FreeBSD reads an earlier -c as a login class, not as
+            # the command (its -m keeps the environment, so the exported values
+            # reach the script). One copy of the script, two ways to start it.
+            run_shellrc_edit() { # mode; the script itself arrives on stdin
+                case "$1" in
+                    su) su -m "$service_user" -c '/bin/sh -s' ;;
+                    *)  /bin/sh -s ;;
+                esac
+            }
+            if [ "$shellrc_how" = skip ]; then
+                pr_warn "Not editing %s: %s is not root and not %s. Add %s/bin to PATH by hand" \
+                    "$shell_rc" "$(id -un)" "$service_user" "$install_path"
             else
-                pr_warn "Not editing %s: run as root or as %s, or add %s/bin to PATH by hand" \
-                    "$shell_rc" "$service_user" "$install_path"
-                shellrc_status=11
-            fi <<'SHELLRC_END'
+                export SHELLRC_RC="$shell_rc" SHELLRC_LINE="$rc_line" SHELLRC_BIN="$install_path/bin"
+                run_shellrc_edit "$shellrc_how" <<'SHELLRC_END'
 # Runs as the service user, who owns both the rc file and its directory.
 # Exit: 0 wrote it, 10 already active, anything else failed and left the rc
 # byte-for-byte alone (the temp is removed on every failure path).
@@ -687,12 +694,14 @@ mode="$(stat -c '%a' "$rc" 2>/dev/null || stat -f '%Lp' "$rc" 2>/dev/null)"
 chmod "${mode:-644}" "$tmp" 2>/dev/null || { rm -f "$tmp"; exit 6; }
 mv -f "$tmp" "$rc" || { rm -f "$tmp"; exit 6; }
 SHELLRC_END
-            case "$shellrc_status" in
-                0)  pr_info "Added %s to PATH in %s" "$install_path/bin" "$shell_rc" ;;
-                10) : ;;
-                11) : ;;  # the skip above already said why
-                *)  pr_warn "Could not update %s; add %s/bin to PATH by hand" "$shell_rc" "$install_path" ;;
-            esac
+                _shellrc_status=$?
+                unset SHELLRC_RC SHELLRC_LINE SHELLRC_BIN
+                case "$_shellrc_status" in
+                    0)  pr_info "Added %s to PATH in %s" "$install_path/bin" "$shell_rc" ;;
+                    10) : ;;
+                    *)  pr_warn "Could not update %s; add %s/bin to PATH by hand" "$shell_rc" "$install_path" ;;
+                esac
+            fi
         fi
     fi
 
