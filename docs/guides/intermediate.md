@@ -71,6 +71,17 @@ Then load it:
 urnet-tools proxy add ~/proxies.txt
 ```
 
+`urnet-tools proxy paste` is interactive: run it, paste the lines at the prompt,
+then press Ctrl+D. It normalizes them on the way in and reloads the provider, so
+there is no separate `proxy refresh` step:
+
+```sh
+urnet-tools proxy paste
+```
+
+Use it when you have the list in hand and would rather paste it than save a file;
+`proxy add` stays the plain path for a file already on disk.
+
 ### 4. Start and verify
 
 ```sh
