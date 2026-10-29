@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offline startup safety tests. The provider, jq, curl and nightly update path
+# Offline startup safety tests. The provider, curl and nightly update path
 # are stubbed; no Docker image, network access or external process control is used.
 set -u
 
@@ -64,21 +64,7 @@ panel_path = repo / "docker/scripts/pelican_panel.sh"
 PY
 if [ "$?" -ne 0 ]; then printf 'FAIL: function extraction\n'; exit 1; fi
 
-cat > "$tmp/bin/jq" <<'PY'
-#!/usr/bin/env python3
-import json
-import sys
-try:
-    with open(sys.argv[-1], encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, dict):
-        raise ValueError("expected an object")
-    data["servers"] = {}
-    print(json.dumps(data, separators=(",", ":")))
-except Exception:
-    raise SystemExit(1)
-PY
-chmod +x "$tmp/bin/jq"
+command -v jq >/dev/null || { printf 'FAIL: jq is required\n'; exit 1; }
 
 cat > "$tmp/provider-stub" <<'SH'
 #!/bin/sh
@@ -98,6 +84,13 @@ PY
       printf '%s\n' partial > "$HOME/.urnetwork/proxy"
       exit 17
     fi
+    # The real binary can return success without changing its seeded config.
+    if [ "${PROXY_FAIL:-no}" = silent ]; then exit 0; fi
+    proxy_file=""
+    for arg in "$@"; do
+      case "$arg" in --proxy_file=*) proxy_file=${arg#--proxy_file=} ;; esac
+    done
+    if ! rg -q '^[[:space:]]*[^[:space:]#]' "$proxy_file"; then exit 0; fi
     printf '%s\n' '{"auths":{"keep":{"user":"alice","password":"secret"}},"servers":{"new:1080":""}}' > "$HOME/.urnetwork/proxy"
     exit 0
     ;;
@@ -111,7 +104,11 @@ PY
     mkdir -p "${JWT_FILE%/*}"
     printf '%s\n' test-jwt > "$JWT_FILE"
     printf 'Jwt written to %s\n' "$JWT_FILE"
-    printf 'echoed %s %s\n' "${USER_AUTH:-}" "${PASSWORD:-}"
+    if [ "${AUTH_DIAGNOSTIC:-no}" = yes ]; then
+      printf '%s\n' 'diagnostic: upstream message'
+    else
+      printf 'echoed %s %s\n' "${USER_AUTH:-}" "${PASSWORD:-}"
+    fi
     exit 0
     ;;
   *) exit 0 ;;
@@ -167,9 +164,13 @@ proxy_none_without_mount() {
     [ "$rc" -eq 0 ] && [ ! -e "$home/.urnetwork" ] &&
         rg -Fq 'none configured' "$out" && [ ! -e "$calls" ]
 }
-proxy_invalid_kept() {
-    [ "$rc" -ne 0 ] && cmp -s "$state/proxy" "$original" &&
-        rg -Fq 'kept it unchanged' "$out" && [ ! -e "$calls" ] && no_staging_left
+proxy_healed() {
+    [ "$rc" -eq 0 ] && rg -Fq 'Proxy configuration replaced from proxy.txt' "$out" &&
+        rg -Fq "$state/proxy" "$out" && no_staging_left || return 1
+    backups=("$state"/proxy.corrupt.*)
+    [ "${#backups[@]}" -eq 1 ] && [ -f "${backups[0]}" ] &&
+        cmp -s "${backups[0]}" "$original" && rg -Fq "${backups[0]}" "$out" &&
+        jq -e '.servers == {"new:1080":""}' "$state/proxy" >/dev/null
 }
 proxy_failed_kept() {
     [ "$rc" -ne 0 ] && cmp -s "$state/proxy" "$original" &&
@@ -202,12 +203,15 @@ home="$tmp/proxy-none/home"; state="$home/.urnetwork"; out="$tmp/proxy-none/out"
 mkdir -p "${out%/*}"; rm -f "$tmp/app/proxy.txt" "$calls"; flavor=stable; proxy_fail=no
 run_proxy; check 'missing proxy mount leaves absent config absent' proxy_none_without_mount
 
-# Malformed persisted JSON must be left alone and must not be overwritten.
-home="$tmp/proxy-invalid/home"; state="$home/.urnetwork"; mkdir -p "$state"
-original="$tmp/proxy-invalid/original"; out="$tmp/proxy-invalid/out"; calls="$tmp/proxy-invalid/calls"
-mkdir -p "${out%/*}"; printf '%s\n' '{not-json' > "$original"; cp "$original" "$state/proxy"
-printf '%s\n' 'new:1080:user:pass' > "$tmp/app/proxy.txt"; rm -f "$calls"; flavor=stable; proxy_fail=no
-run_proxy; check 'invalid existing config remains untouched' proxy_invalid_kept
+# Invalid saved JSON or a non-object must be preserved as a backup and healed.
+for invalid in malformed null; do
+    home="$tmp/proxy-$invalid/home"; state="$home/.urnetwork"; mkdir -p "$state"
+    original="$tmp/proxy-$invalid/original"; out="$tmp/proxy-$invalid/out"; calls="$tmp/proxy-$invalid/calls"
+    if [ "$invalid" = malformed ]; then printf '%s\n' '{not-json' > "$original"; else printf '%s\n' null > "$original"; fi
+    cp "$original" "$state/proxy"
+    printf '%s\n' 'new:1080:user:pass' > "$tmp/app/proxy.txt"; flavor=stable; proxy_fail=no
+    run_proxy; check "$invalid saved config is backed up and healed" proxy_healed
+done
 
 # A failed provider import can partially write its staged file, never live state.
 home="$tmp/proxy-failed/home"; state="$home/.urnetwork"; mkdir -p "$state"
@@ -216,7 +220,26 @@ mkdir -p "${out%/*}"; printf '%s\n' '{"auths":{"keep":{"user":"alice","password"
 cp "$original" "$state/proxy"; printf '%s\n' 'new:1080:user:pass' > "$tmp/app/proxy.txt"; rm -f "$calls"; flavor=stable; proxy_fail=yes
 run_proxy; check 'partial failed import preserves live config' proxy_failed_kept
 
+# Silent write failures and files without proxies must not install the seed.
+proxy_empty_rejected() {
+    proxy_failed_kept && rg -Fq 'staged server list is empty or invalid' "$out" &&
+        ! rg -Fq 'Proxy configuration replaced from proxy.txt' "$out"
+}
+for scenario in silent empty comments; do
+    home="$tmp/proxy-$scenario/home"; state="$home/.urnetwork"; mkdir -p "$state"
+    original="$tmp/proxy-$scenario/original"; out="$tmp/proxy-$scenario/out"; calls="$tmp/proxy-$scenario/calls"
+    printf '%s\n' '{"auths":{"keep":{"user":"alice","password":"secret"}},"servers":{"old:1080":"keep"}}' > "$original"
+    cp "$original" "$state/proxy"; flavor=stable; proxy_fail=no
+    case "$scenario" in
+      silent) proxy_fail=silent; printf '%s\n' 'new:1080:user:pass' > "$tmp/app/proxy.txt" ;;
+      empty) : > "$tmp/app/proxy.txt" ;;
+      comments) printf '%s\n' '# first comment' '  # second comment' > "$tmp/app/proxy.txt" ;;
+    esac
+    run_proxy; check "$scenario import preserves live config and reports failure" proxy_empty_rejected
+done
+
 # A successful import replaces servers while retaining named auth entries.
+printf '%s\n' 'new:1080:user:pass' > "$tmp/app/proxy.txt"
 home="$tmp/proxy-success/home"; state="$home/.urnetwork"; mkdir -p "$state"
 original="$tmp/proxy-success/original"; out="$tmp/proxy-success/out"; calls="$tmp/proxy-success/calls"
 mkdir -p "${out%/*}"; printf '%s\n' '{"auths":{"keep":{"user":"alice","password":"secret"}},"servers":{"old:1080":"keep"}}' > "$original"
@@ -302,6 +325,31 @@ for kind in shared pelican; do
     functions="$tmp/common-functions.sh"; [ "$kind" = pelican ] && functions="$tmp/panel-function.sh"
     out="$tmp/login-$kind/out"
     run_login; check "$kind login debug redacts credential values" login_safe
+done
+
+login_empty_credentials() {
+    env PATH="$tmp/bin:$PATH" HOME="$home" TEST_APP="$tmp/app" FUNCTIONS="$functions" \
+        LOGIN_KIND="$kind" DEBUG=true USER_AUTH="$test_user" PASSWORD="$test_password" AUTH_DIAGNOSTIC=yes \
+        sh "$tmp/login-driver" > "$out" 2>&1 || return 1
+    rg -Fq 'diagnostic: upstream message' "$out" && ! rg -Fq 'DEBUG: AUTH_OUTPUT=[redacted]' "$out" || return 1
+    env PATH="$tmp/bin:$PATH" HOME="$home" TEST_APP="$tmp/app" FUNCTIONS="$functions" \
+        LOGIN_KIND="$kind" DEBUG=true USER_AUTH="$test_user" PASSWORD="$test_password" \
+        sh "$tmp/login-driver" > "$out" 2>&1 || return 1
+    if [ -n "$test_user" ] || [ -n "$test_password" ]; then
+        rg -Fqx 'DEBUG: AUTH_OUTPUT=[redacted]' "$out" &&
+            ! rg -Fq 'fake-user-123' "$out" && ! rg -Fq 'fake-password-456' "$out"
+    else
+        ! rg -Fq 'DEBUG: AUTH_OUTPUT=[redacted]' "$out"
+    fi
+}
+for kind in shared pelican; do
+    functions="$tmp/common-functions.sh"; [ "$kind" = pelican ] && functions="$tmp/panel-function.sh"
+    for missing in user password both; do
+        home="$tmp/login-$kind-$missing/home"; mkdir -p "$home/.urnetwork"; out="$tmp/login-$kind-$missing/out"
+        test_user=fake-user-123; test_password=fake-password-456
+        case "$missing" in user) test_user= ;; password) test_password= ;; both) test_user=; test_password= ;; esac
+        check "$kind login keeps diagnostics with empty $missing and redacts remaining secret" login_empty_credentials
+    done
 done
 
 cat > "$tmp/nightly-driver" <<'SH'
