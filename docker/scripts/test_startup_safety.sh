@@ -106,6 +106,10 @@ PY
     printf 'Jwt written to %s\n' "$JWT_FILE"
     if [ "${AUTH_DIAGNOSTIC:-no}" = yes ]; then
       printf '%s\n' 'diagnostic: upstream message'
+    elif [ "${AUTH_NORMALIZED:-no}" = yes ]; then
+      # the server may echo the address normalized and nothing else; the
+      # redaction must catch it on the address alone
+      printf 'echoed %s\n' "$(printf '%s' "${USER_AUTH:-}" | tr '[:upper:]' '[:lower:]')"
     else
       printf 'echoed %s %s\n' "${USER_AUTH:-}" "${PASSWORD:-}"
     fi
@@ -325,6 +329,19 @@ for kind in shared pelican; do
     functions="$tmp/common-functions.sh"; [ "$kind" = pelican ] && functions="$tmp/panel-function.sh"
     out="$tmp/login-$kind/out"
     run_login; check "$kind login debug redacts credential values" login_safe
+done
+
+login_case_normalized() {
+    env PATH="$tmp/bin:$PATH" HOME="$home" TEST_APP="$tmp/app" FUNCTIONS="$functions" \
+        LOGIN_KIND="$kind" DEBUG=true USER_AUTH='Private-User-123' PASSWORD='private-password-456' AUTH_NORMALIZED=yes \
+        sh "$tmp/login-driver" > "$out" 2>&1 || return 1
+    rg -Fqx 'DEBUG: AUTH_OUTPUT=[redacted]' "$out" && ! rg -Fq 'private-user-123' "$out"
+}
+for kind in shared pelican; do
+    home="$tmp/login-$kind/home"; mkdir -p "$home/.urnetwork"
+    functions="$tmp/common-functions.sh"; [ "$kind" = pelican ] && functions="$tmp/panel-function.sh"
+    out="$tmp/login-$kind/out"
+    check "$kind login redacts a case-normalized credential echo" login_case_normalized
 done
 
 login_empty_credentials() {
