@@ -40,6 +40,7 @@ def extract(source, function):
 common_path = repo / "docker/scripts/provider_common.sh"
 common = common_path.read_text()
 functions = (
+    "func_check_proxy_import",
     "func_check_proxy",
     "func_ip_checker",
     "func_login_retry_loop",
@@ -177,8 +178,14 @@ proxy_healed() {
         jq -e '.servers == {"new:1080":""}' "$state/proxy" >/dev/null
 }
 proxy_failed_kept() {
-    [ "$rc" -ne 0 ] && cmp -s "$state/proxy" "$original" &&
-        rg -Fq 'kept existing configuration' "$out" && rg -Fq 'proxy add' "$calls" && no_staging_left
+    [ "$rc" -eq 0 ] && cmp -s "$state/proxy" "$original" &&
+        rg -Fq 'kept the existing configuration' "$out" && rg -Fq 'proxy add' "$calls" && no_staging_left
+}
+
+# A corrupt saved config is not a fallback: the provider cannot load it, so the
+# container would end up sending traffic direct and must stop instead.
+proxy_fatal() {
+    [ "$rc" -ne 0 ] && rg -Fq 'refusing to start without the mounted proxy' "$out" && no_staging_left
 }
 proxy_imported() {
     [ "$rc" -eq 0 ] && rg -Fq 'Proxy configuration replaced from proxy.txt' "$out" &&
@@ -223,6 +230,12 @@ original="$tmp/proxy-failed/original"; out="$tmp/proxy-failed/out"; calls="$tmp/
 mkdir -p "${out%/*}"; printf '%s\n' '{"auths":{"keep":{"user":"alice","password":"secret"}},"servers":{"old:1080":"keep"}}' > "$original"
 cp "$original" "$state/proxy"; printf '%s\n' 'new:1080:user:pass' > "$tmp/app/proxy.txt"; rm -f "$calls"; flavor=stable; proxy_fail=yes
 run_proxy; check 'partial failed import preserves live config' proxy_failed_kept
+
+# With no saved config there is nothing to fall back on, so a failed import stops startup.
+home="$tmp/proxy-fatal/home"; state="$home/.urnetwork"; mkdir -p "$state"
+original="$tmp/proxy-fatal/original"; out="$tmp/proxy-fatal/out"; calls="$tmp/proxy-fatal/calls"
+mkdir -p "${out%/*}"; printf '%s\n' 'new:1080:user:pass' > "$tmp/app/proxy.txt"; rm -f "$calls"; flavor=stable; proxy_fail=yes
+run_proxy; check 'a failed import with no saved config stops startup' proxy_fatal
 
 # Silent write failures and files without proxies must not install the seed.
 proxy_empty_rejected() {
@@ -454,11 +467,11 @@ bootstrap_order() {
 }
 check 'nightly downloads the binary before importing proxies' bootstrap_order
 
-bootstrap_proxy_nonfatal() {
+bootstrap_proxy_fatal() {
   block=$(sed -n '/^      nightly)/,/^        ;;/p' "$REPO/docker/scripts/provider_common.sh")
-  printf '%s\n' "$block" | grep -q 'func_check_proxy || true'
+  printf '%s\n' "$block" | grep -q '^        func_check_proxy$'
 }
-check 'a failed proxy import does not abort nightly startup' bootstrap_proxy_nonfatal
+check 'nightly lets a fatal proxy failure reach startup' bootstrap_proxy_fatal
 
 printf 'Results: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
