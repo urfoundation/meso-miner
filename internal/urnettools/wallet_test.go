@@ -1,6 +1,7 @@
 package urnettools
 
 import (
+	"bufio"
 	"strings"
 	"testing"
 
@@ -162,8 +163,70 @@ func TestWalletFleetDetectionViaProviderEnv(t *testing.T) {
 	if err := cmdWalletSet([]string{"-f", "5CvF...ss58", "--coldkey_seed_file=/tmp/seed"}); err == nil {
 		t.Fatal("the provider environment marker must count as a fleet node")
 	}
-	if err := cmdWalletSign([]string{"5CvF...ss58"}); err == nil {
-		t.Fatal("wallet sign must refuse on a fleet node")
+	if len(calls) != 0 {
+		t.Fatal("a refused set must not delegate")
+	}
+}
+
+// withWalletStdin feeds one answer to the guard as if stdin were a terminal.
+func withWalletStdin(t *testing.T, answer string) {
+	t.Helper()
+	forceInteractiveForTest(t)
+	old := stdinReader
+	stdinReader = bufio.NewReader(strings.NewReader(answer))
+	t.Cleanup(func() { stdinReader = old })
+}
+
+// The browser form signs in the extension and never reads a seed, so the
+// fleet-node guard must not apply to it even when the box looks like one.
+func TestWalletSignNotGatedOnFleetNode(t *testing.T) {
+	var calls [][]string
+	withWalletSeams(t, []Provider{walletTestProvider()}, &calls, "", "")
+	t.Setenv("URNETWORK_PROFILE", "lowmem")
+	if err := cmdWalletSign([]string{"-f", "5CvF...ss58", "--no-open"}); err != nil {
+		t.Fatalf("wallet sign must not be gated on a fleet node: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("wallet sign must delegate on a fleet node, got %v", calls)
+	}
+}
+
+// The seed-file form asks a human on a fleet node: yes proceeds, anything
+// else cancels and nothing is delegated.
+func TestWalletSetSeedFilePromptOnFleetNode(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		answer  string
+		proceed bool
+	}{
+		{"y", "y\n", true},
+		{"yes", "yes\n", true},
+		{"n", "n\n", false},
+		{"empty", "\n", false},
+		{"eof", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls [][]string
+			withWalletSeams(t, []Provider{walletTestProvider()}, &calls, "", "")
+			t.Setenv("URNETWORK_PROFILE", "lowmem")
+			withWalletStdin(t, tc.answer)
+			err := cmdWalletSet([]string{"-f", "5CvF...ss58", "--coldkey_seed_file=/tmp/seed"})
+			if tc.proceed {
+				if err != nil {
+					t.Fatalf("answering %q must proceed: %v", tc.answer, err)
+				}
+				if len(calls) != 1 {
+					t.Fatalf("answering %q must delegate, got %v", tc.answer, calls)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "cancelled") {
+				t.Fatalf("answering %q must cancel, got %v", tc.answer, err)
+			}
+			if len(calls) != 0 {
+				t.Fatalf("a cancelled set must not delegate, got %v", calls)
+			}
+		})
 	}
 }
 
