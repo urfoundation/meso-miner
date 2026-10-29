@@ -186,8 +186,15 @@ func_check_credentials() {
 # === Proxy Setup ===
 func_check_proxy() {
     log "[INFO] Checking proxy configuration"
-    proxy_dir="$HOME/.urnetwork"
+    proxy_dir="${HOME:-/root}/.urnetwork"
     proxy_config="$proxy_dir/proxy"
+    # A staging directory outlives the container process if it is killed
+    # mid-import, so sweep the leftovers before making another one.
+    if [ -d "$proxy_dir" ]; then
+        for stale in "$proxy_dir"/.proxy-import.*; do
+            [ -d "$stale" ] && rm -rf "$stale"
+        done
+    fi
     if [ ! -f "/app/proxy.txt" ]; then
         if [ -f "$proxy_config" ]; then
             log "[INFO] No proxy.txt found; kept existing proxy configuration"
@@ -206,7 +213,7 @@ func_check_proxy() {
         fi
         return 1
     fi
-    if ! proxy_stage_home=$(mktemp -d "$proxy_dir/.proxy-import.XXXXXX"); then
+    if ! proxy_stage_home=$(mktemp -d -p "$proxy_dir" .proxy-import.XXXXXX); then
         if [ -f "$proxy_config" ]; then
             log "[WARN] Proxy staging failed; kept existing configuration"
         else
@@ -228,7 +235,7 @@ func_check_proxy() {
     fi
     if [ -f "$proxy_config" ] && ! jq -e -s 'length == 1 and (.[0] | type == "object")' "$proxy_config" >/dev/null 2>&1; then
         # Reserve a unique backup name so repeated failures never overwrite data.
-        proxy_backup=$(mktemp "$proxy_config.corrupt.$(date +%s).XXXXXX") || {
+        proxy_backup=$(mktemp -p "$proxy_dir" "proxy.corrupt.$(date +%s).XXXXXX") || {
             log "[WARN] Cannot back up unreadable proxy configuration $proxy_config; kept it unchanged"
             rm -rf "$proxy_stage_home"
             return 1
@@ -1029,7 +1036,7 @@ func_bootstrap() {
         func_choose_network
         func_check_dir
         func_check_credentials
-        func_check_proxy
+        func_check_proxy || true
         func_report_identity
         func_ip_checker
         func_start_vnstat
@@ -1049,7 +1056,7 @@ func_bootstrap() {
         func_check_update
         # Proxy import invokes the provider binary, which may only have been
         # downloaded by the update check on a fresh nightly container.
-        func_check_proxy
+        func_check_proxy || true
         # choose_network runs after func_check_update: on a fresh nightly
         # container the urnetwork_${A_SYS_ARCH}_${PROVIDER_FLAVOR} binary doesn't exist
         # until the update check downloads it.
