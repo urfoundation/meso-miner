@@ -136,10 +136,11 @@ func TestWalletSetSeedFileRefusedOnFleetNode(t *testing.T) {
 	if len(calls) != 0 {
 		t.Fatal("a refused set must not delegate")
 	}
-	// No flag bypasses the guard any more.
+	// No flag bypasses the guard any more: the removed flag is rejected by
+	// name before anything reaches the provider.
 	err = cmdWalletSet([]string{"-f", "--i-am-on-my-own-workstation", "5CvF...ss58", "--coldkey_seed_file=/tmp/seed"})
-	if err == nil {
-		t.Fatal("a removed flag must not bypass the fleet-node guard")
+	if err == nil || !strings.Contains(err.Error(), "is gone") {
+		t.Fatalf("a removed flag must be rejected by name, got %v", err)
 	}
 	if len(calls) != 0 {
 		t.Fatal("a refused set must not delegate")
@@ -175,6 +176,27 @@ func withWalletStdin(t *testing.T, answer string) {
 	old := stdinReader
 	stdinReader = bufio.NewReader(strings.NewReader(answer))
 	t.Cleanup(func() { stdinReader = old })
+}
+
+// The removed flag is rejected by name, on every subcommand, and never
+// reaches the provider.
+func TestWalletRemovedWorkstationFlagRejected(t *testing.T) {
+	var calls [][]string
+	withWalletSeams(t, []Provider{walletTestProvider()}, &calls, "", "")
+	for _, args := range [][]string{
+		{"-f", "--i-am-on-my-own-workstation", "5CvF...ss58", "--coldkey_seed_file=/tmp/seed"},
+		{"-f", "5CvF...ss58", "--message=m", "--signature=0x00", "--i-am-on-my-own-workstation"},
+	} {
+		if err := cmdWalletSet(args); err == nil || !strings.Contains(err.Error(), "is gone") {
+			t.Fatalf("wallet set must reject the removed flag by name, got %v", err)
+		}
+	}
+	if err := cmdWalletSign([]string{"--i-am-on-my-own-workstation", "5CvF...ss58"}); err == nil || !strings.Contains(err.Error(), "is gone") {
+		t.Fatal("wallet sign must reject the removed flag by name")
+	}
+	if len(calls) != 0 {
+		t.Fatalf("a rejected call must not delegate, got %v", calls)
+	}
 }
 
 // The browser form signs in the extension and never reads a seed, so the

@@ -69,6 +69,20 @@ func walletSeedFileForm(args []string) bool {
 	return false
 }
 
+// walletRemovedWorkstationFlag is an argument this tool used to accept. It is
+// rejected by name so an old script gets a sentence instead of a provider
+// parse error, and so nobody thinks it still bypasses anything.
+const walletRemovedWorkstationFlag = "--i-am-on-my-own-workstation"
+
+func rejectRemovedWorkstationFlag(args []string) error {
+	for _, a := range args {
+		if a == walletRemovedWorkstationFlag || strings.HasPrefix(a, walletRemovedWorkstationFlag+"=") {
+			return fmt.Errorf("%s is gone: on a box that looks like a fleet node the seed-file form now asks a human at the terminal, and nothing can answer that for them", walletRemovedWorkstationFlag)
+		}
+	}
+	return nil
+}
+
 // extractWalletToolFlags removes the tool-side flags (-f/--force) from args,
 // returning the value and the rest.
 func extractWalletToolFlags(args []string) (force bool, rest []string) {
@@ -244,6 +258,9 @@ proof this sends the legacy unsigned request. Provider flags pass through.
 		return nil
 	}
 	dryRun, args := stripDryRunFlag(args)
+	if err := rejectRemovedWorkstationFlag(args); err != nil {
+		return err
+	}
 	force, args := extractWalletToolFlags(args)
 	p, rest, err := walletTarget(args)
 	if err != nil {
@@ -284,6 +301,9 @@ anywhere a browser can reach, including a box that also runs a provider.
 		return nil
 	}
 	dryRun, args := stripDryRunFlag(args)
+	if err := rejectRemovedWorkstationFlag(args); err != nil {
+		return err
+	}
 	force, args := extractWalletToolFlags(args)
 	// The browser form never touches the seed: the extension signs and the
 	// seed stays where it lives, so there is nothing here to guard.
