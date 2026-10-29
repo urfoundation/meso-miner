@@ -306,10 +306,18 @@ func_report_identity() {
 func_ip_checker() {
   if [ "$ENABLE_IP_CHECKER" = "true" ]; then
     log "[INFO] Checking current public IP..."
-    if curl -fsSL "$IP_CHECKER_URL" | sh; then
-      log "[INFO] IP checker script ran successfully"
+    if ! ip_checker_file=$(mktemp "${TMPDIR:-/tmp}/urnetwork-ip-checker.XXXXXX"); then
+      log "[WARN] IP checker fetch failed: could not create temporary file"
+    elif ! curl -fsSL "$IP_CHECKER_URL" -o "$ip_checker_file"; then
+      log "[WARN] IP checker fetch failed"
+      rm -f "$ip_checker_file"
     else
-      log "[WARN] Could not fetch or execute IP checker script"
+      if sh "$ip_checker_file"; then
+        log "[INFO] IP checker script ran successfully"
+      else
+        log "[WARN] IP checker script failed"
+      fi
+      rm -f "$ip_checker_file"
     fi
   else
     log "[INFO] IP checker disabled"
