@@ -1008,11 +1008,13 @@ func_bootstrap() {
         func_get_architecture
         func_check_dir
         func_check_credentials
-        func_check_proxy
         func_report_identity
         func_ip_checker
         func_start_vnstat
         func_check_update
+        # Proxy import invokes the provider binary, which may only have been
+        # downloaded by the update check on a fresh nightly container.
+        func_check_proxy
         # choose_network runs after func_check_update: on a fresh nightly
         # container the urnetwork_${A_SYS_ARCH}_${PROVIDER_FLAVOR} binary doesn't exist
         # until the update check downloads it.
