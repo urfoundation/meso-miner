@@ -112,6 +112,9 @@ PY
       # the server may echo the address normalized and nothing else; the
       # redaction must catch it on the address alone
       printf 'echoed %s\n' "$(printf '%s' "${USER_AUTH:-}" | tr '[:upper:]' '[:lower:]')"
+    elif [ "${AUTH_PASSWORD:-no}" = yes ]; then
+      # same question for the password, with the address left out entirely
+      printf 'echoed %s\n' "$(printf '%s' "${PASSWORD:-}" | tr '[:upper:]' '[:lower:]')"
     else
       printf 'echoed %s %s\n' "${USER_AUTH:-}" "${PASSWORD:-}"
     fi
@@ -351,11 +354,18 @@ login_case_normalized() {
         sh "$tmp/login-driver" > "$out" 2>&1 || return 1
     rg -Fqx 'DEBUG: AUTH_OUTPUT=[redacted]' "$out" && ! rg -Fq 'private-user-123' "$out"
 }
+login_password_normalized() {
+    env PATH="$tmp/bin:$PATH" HOME="$home" TEST_APP="$tmp/app" FUNCTIONS="$functions" \
+        LOGIN_KIND="$kind" DEBUG=true USER_AUTH='private-user-123' PASSWORD='Private-Password-456' AUTH_PASSWORD=yes \
+        sh "$tmp/login-driver" > "$out" 2>&1 || return 1
+    rg -Fqx 'DEBUG: AUTH_OUTPUT=[redacted]' "$out" && ! rg -Fq 'private-password-456' "$out"
+}
 for kind in shared pelican; do
     home="$tmp/login-$kind/home"; mkdir -p "$home/.urnetwork"
     functions="$tmp/common-functions.sh"; [ "$kind" = pelican ] && functions="$tmp/panel-function.sh"
     out="$tmp/login-$kind/out"
     check "$kind login redacts a case-normalized credential echo" login_case_normalized
+    check "$kind login redacts a case-normalized password echo" login_password_normalized
 done
 
 login_empty_credentials() {
