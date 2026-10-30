@@ -98,10 +98,10 @@ PY
     ;;
   auth)
     if [ "${JWT_CONTRACT_TEST:-no}" = yes ]; then
-      if [ "$#" -ne 3 ] || [ -n "$2" ] || [ "$3" != -f ] || [ -z "${URNETWORK_AUTH_CODE:-}" ]; then
+      if [ "$#" -ne 3 ] || [ "$2" != "$URNETWORK_AUTH_CODE" ] || [ "$3" != -f ] || [ -z "${URNETWORK_AUTH_CODE:-}" ]; then
         exit 91
       fi
-      printf '%s\n' 'empty positional code; environment fallback present' > "$AUTH_CONTRACT_LOG"
+      printf '%s\n' 'auth code forwarded as the positional argument' > "$AUTH_CONTRACT_LOG"
     fi
     mkdir -p "${JWT_FILE%/*}"
     printf '%s\n' test-jwt > "$JWT_FILE"
@@ -455,7 +455,7 @@ pgrep() { return 1; }
 func_start_provider_jwt
 SH
 jwt_contract() {
-    [ "$rc" -eq 0 ] && rg -Fq 'empty positional code; environment fallback present' "$contract_log" &&
+    [ "$rc" -eq 0 ] && rg -Fq 'auth code forwarded as the positional argument' "$contract_log" &&
         [ -s "$home/.urnetwork/jwt" ]
 }
 home="$tmp/jwt-contract/home"; mkdir -p "$home/.urnetwork"; contract_log="$tmp/jwt-contract/auth-contract"
@@ -465,7 +465,7 @@ env PATH="$tmp/bin:$PATH" HOME="$home" TEST_APP="$tmp/app" COMMON_FUNCTIONS="$tm
     JWT_CONTRACT_TEST=yes AUTH_CONTRACT_LOG="$contract_log" URNETWORK_AUTH_CODE=environment-only-code \
     sh "$tmp/jwt-driver" > "$out" 2>&1
 rc=$?
-check 'JWT startup keeps empty positional code and environment fallback' jwt_contract
+check 'JWT startup forwards the auth code as the positional argument' jwt_contract
 
 # The nightly bootstrap must download the binary before the proxy import runs it,
 # and a failed import must not abort startup. The function-level cases above cannot
