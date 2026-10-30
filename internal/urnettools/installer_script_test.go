@@ -623,6 +623,16 @@ func freeBSDGateFailure(t *testing.T) (string, string, string) {
 	if body == "" {
 		t.Fatal("missing do_install")
 	}
+	// The real digest helpers, so the harness exercises the shipped
+	// verification rather than a stub that always agrees with itself.
+	var digestHelpers string
+	for _, fn := range []string{"release_asset_scan", "release_lists_asset", "get_asset_digest_from_api_response", "compute_sha256_file", "verify_sha256_file"} {
+		src := extractShellFunc(t, strings.ReplaceAll(string(b), "\r\n", "\n"), fn)
+		if src == "" {
+			t.Fatalf("missing %s", fn)
+		}
+		digestHelpers += src + "\n"
+	}
 	dir := t.TempDir()
 	tree := filepath.Join(dir, "tree")
 	if err := os.MkdirAll(filepath.Join(tree, "bin"), 0755); err != nil {
@@ -647,13 +657,13 @@ func freeBSDGateFailure(t *testing.T) (string, string, string) {
  pr_info() { :; }
  pr_warn() { :; }
  pr_err() { :; }
- http_fetch() { if [ "$#" -gt 1 ]; then printf 'tool' > "$2"; else printf '{"assets":[{"name":"urnet-tools-freebsd-amd64","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}'; fi; }
- jq() { case "$*" in *tag_name*) printf 'test-tag\n' ;; *) printf '%064d\n' 0 | tr 0 a ;; esac; }
+ http_fetch() { if [ "$#" -gt 1 ]; then printf 'tool' > "$2"; else printf '{"assets":[{"name":"urnetwork-provider-test-tag-freebsd-amd64.tar.gz","digest":"sha256:%s"},{"name":"urnet-tools-freebsd-amd64","digest":"sha256:%s"}]}' "$(printf '%064d' 0 | tr 0 a)" "$(printf '%064d' 0 | tr 0 a)"; fi; }
  uname() { printf 'amd64\n'; }
  sha256() { printf '%064d\n' 0 | tr 0 a; }
  tar() { printf 'new binary' > "$4/provider"; }
  install_wrapper_tool() { :; }
  enforce_install_tree_perms() { printf '%s\n%s\n' "$(id -u)" "$2" > "$install_path/gate-called"; return 1; }
+ ` + digestHelpers + `
  ` + body + `
  do_install test-tag
  `
@@ -686,6 +696,120 @@ func TestFreeBSDGateFailurePreservesBinaryAndVersion(t *testing.T) {
 	_, binary, version := freeBSDGateFailure(t)
 	if binary != "old binary" || version != "old version" {
 		t.Fatalf("gate failure changed installed binary/version: %q / %q", binary, version)
+	}
+}
+
+// runFreeBSDDigestInstall runs the real do_install body against a stubbed
+// release. fetched reports whether the provider tarball was downloaded;
+// reachedGate reports whether the install got past verification to the
+// permission gate, which the stub fails on purpose so nothing is installed.
+func runFreeBSDDigestInstall(t *testing.T, releaseJSON, actualSha string) (out string, fetched, reachedGate bool) {
+	t.Helper()
+	skipWithoutPOSIXShell(t)
+	b, err := os.ReadFile("../../scripts/Provider_Install_FreeBSD.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := strings.ReplaceAll(string(b), "\r\n", "\n")
+	var helpers string
+	for _, fn := range []string{"release_asset_scan", "release_lists_asset", "get_asset_digest_from_api_response", "compute_sha256_file", "verify_sha256_file"} {
+		src := extractShellFunc(t, script, fn)
+		if src == "" {
+			t.Fatalf("missing %s", fn)
+		}
+		helpers += src + "\n"
+	}
+	body := extractShellFunc(t, script, "do_install")
+	if body == "" {
+		t.Fatal("missing do_install")
+	}
+	dir := t.TempDir()
+	tree := filepath.Join(dir, "tree")
+	if err := os.MkdirAll(filepath.Join(tree, "bin"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	harness := `install_path="$1"
+ provider_bin="$install_path/bin/urnetwork"
+ state_dir="$install_path/state"
+ service_user=testuser
+ github_api=example
+ me=test
+ id() { if [ "$1" = -u ]; then printf '1000\n'; else command id "$@"; fi; }
+ priv() { "$@"; }
+ priv_rm() { [ -z "$1" ] || rm -f "$1"; }
+ install_cleanup() { :; }
+ assert_state_path_safe() { :; }
+ pr_info() { :; }
+ pr_warn() { :; }
+ pr_err() { printf 'ERR: '; printf "$@"; printf '\n'; }
+ http_fetch() { if [ "$#" -gt 1 ]; then printf 'x' > "$2"; case "$1" in *.tar.gz) : > "$install_path/fetched" ;; esac; else printf '%s' "$RELEASE_JSON"; fi; }
+ uname() { printf 'amd64\n'; }
+ sha256() { printf '%s\n' "$ACTUAL_SHA"; }
+ tar() { printf 'new binary' > "$4/provider"; }
+ enforce_install_tree_perms() { : > "$install_path/gate-called"; return 1; }
+ ` + helpers + body + `
+ do_install test-tag
+ `
+	h := filepath.Join(dir, "harness.sh")
+	if err := os.WriteFile(h, []byte(harness), 0755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("/bin/sh", h, tree)
+	cmd.Env = append(os.Environ(), "RELEASE_JSON="+releaseJSON, "ACTUAL_SHA="+actualSha)
+	o, _ := cmd.CombinedOutput()
+	_, ferr := os.Stat(filepath.Join(tree, "fetched"))
+	_, gerr := os.Stat(filepath.Join(tree, "gate-called"))
+	return string(o), ferr == nil, gerr == nil
+}
+
+func freeBSDDigestRelease(provider, tool string) string {
+	asset := func(name, digest string) string {
+		if digest == "" {
+			return `{"name":"` + name + `"}`
+		}
+		return `{"name":"` + name + `","digest":"sha256:` + digest + `"}`
+	}
+	return `{"assets":[` + asset("urnetwork-provider-test-tag-freebsd-amd64.tar.gz", provider) + `,` + asset("urnet-tools-freebsd-amd64", tool) + `]}`
+}
+
+// A tarball whose digest does not match the release metadata must be refused
+// before it is extracted or staged.
+func TestFreeBSDInstallRefusesProviderDigestMismatch(t *testing.T) {
+	want := strings.Repeat("a", 64)
+	out, fetched, gate := runFreeBSDDigestInstall(t, freeBSDDigestRelease(want, want), strings.Repeat("b", 64))
+	if !fetched {
+		t.Fatalf("test did not reach the download: %s", out)
+	}
+	if gate || !strings.Contains(out, "SHA-256 digest mismatch for provider asset") {
+		t.Fatalf("mismatched provider digest was not refused (gate reached=%v): %s", gate, out)
+	}
+}
+
+// A release that publishes no provider digest is refused before any download,
+// with or without jq or python3 on the host.
+func TestFreeBSDInstallRefusesProviderWithoutDigest(t *testing.T) {
+	out, fetched, gate := runFreeBSDDigestInstall(t, freeBSDDigestRelease("", strings.Repeat("a", 64)), strings.Repeat("a", 64))
+	if fetched || gate || !strings.Contains(out, "Cannot establish a sha256 digest for provider asset") {
+		t.Fatalf("missing provider digest was not refused up front (fetched=%v gate=%v): %s", fetched, gate, out)
+	}
+}
+
+// A missing tool digest is a release bug and must fail loudly, not fall back.
+func TestFreeBSDInstallRefusesToolWithoutDigest(t *testing.T) {
+	d := strings.Repeat("a", 64)
+	out, _, gate := runFreeBSDDigestInstall(t, freeBSDDigestRelease(d, ""), d)
+	if gate || !strings.Contains(out, "Cannot verify urnet-tools") {
+		t.Fatalf("missing tool digest was not refused (gate reached=%v): %s", gate, out)
+	}
+}
+
+// With both digests matching, verification passes and the install proceeds to
+// the permission gate (which the stub fails so nothing is written).
+func TestFreeBSDInstallVerifiedAssetsReachPermissionGate(t *testing.T) {
+	d := strings.Repeat("a", 64)
+	out, fetched, gate := runFreeBSDDigestInstall(t, freeBSDDigestRelease(d, d), d)
+	if !fetched || !gate {
+		t.Fatalf("verified install did not reach the gate (fetched=%v gate=%v): %s", fetched, gate, out)
 	}
 }
 
@@ -735,12 +859,10 @@ func TestFreeBSDToolDigestLookup(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := strings.ReplaceAll(string(b), "\r\n", "\n")
-	i := strings.Index(script, `tool_digest="$(printf`)
-	j := strings.Index(script, `if [ -z "$tool_digest" ]`)
-	if i < 0 || j < 0 || j <= i {
-		t.Fatal("could not locate the tool digest lookup in the FreeBSD installer")
+	block := extractShellFunc(t, script, "get_asset_digest_from_api_response")
+	if block == "" || !strings.Contains(script, `tool_digest="$(get_asset_digest_from_api_response "$release_json" "$tool_asset")"`) {
+		t.Fatal("tool digest lookup does not use the shared helper")
 	}
-	block := script[i:j]
 
 	const hex64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	cases := []struct {
@@ -779,13 +901,13 @@ func TestFreeBSDToolDigestLookup(t *testing.T) {
 	// A missing marker is a FAILURE, not a skip: the previous version wrapped
 	// this in `if found {`, so adding one space to the expression made every
 	// jq subtest vanish while the test reported success (mutation-proved).
-	jqStart := strings.Index(block, "jq -r --arg a \"$tool_asset\" '")
+	jqStart := strings.Index(block, "jq -r --arg a \"$_ast\" '")
 	if !haveJq {
 		t.Log("jq not installed here; exercising only the python path")
 	} else if jqStart < 0 {
 		t.Error("could not find the jq digest expression in the installer; the marker moved and this test would otherwise pass vacuously")
 	} else {
-		expr := block[jqStart+len("jq -r --arg a \"$tool_asset\" '"):]
+		expr := block[jqStart+len("jq -r --arg a \"$_ast\" '"):]
 		if end := strings.Index(expr, "' 2>/dev/null"); end >= 0 {
 			expr = expr[:end]
 			for _, c := range cases {
@@ -815,7 +937,7 @@ func TestFreeBSDToolDigestLookup(t *testing.T) {
 		t.Error("could not find the python digest expression in the installer; the marker moved and this test would otherwise pass vacuously")
 	} else {
 		py := block[pyStart+len("python3 -c '"):]
-		pyEnd := strings.Index(py, "' \"$tool_asset\"")
+		pyEnd := strings.Index(py, "' \"$_ast\"")
 		if pyEnd < 0 {
 			t.Error("could not find the end of the python digest expression; the marker moved")
 		} else {
@@ -833,6 +955,138 @@ func TestFreeBSDToolDigestLookup(t *testing.T) {
 					}
 				})
 			}
+		}
+	}
+}
+
+// The release metadata path must work on a clean FreeBSD host: jq and python3
+// are packages there, and this installer never installs packages. The base
+// fallback is exercised by pointing PATH at a directory that holds only base
+// tools, so `command -v jq` and `command -v python3` fail exactly as they do
+// on a base-only box. A parser-dependent harness would skip here instead of
+// proving the install still verifies.
+func TestFreeBSDDigestAndAssetListOnBaseToolsOnly(t *testing.T) {
+	skipWithoutPOSIXShell(t)
+	b, err := os.ReadFile("../../scripts/Provider_Install_FreeBSD.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := strings.ReplaceAll(string(b), "\r\n", "\n")
+	digestFn := extractShellFunc(t, script, "get_asset_digest_from_api_response")
+	listFn := extractShellFunc(t, script, "release_lists_asset")
+	scanFn := extractShellFunc(t, script, "release_asset_scan")
+	if digestFn == "" || listFn == "" || scanFn == "" {
+		t.Fatal("could not extract the FreeBSD digest, asset-list and base-scan helpers")
+	}
+
+	// A base-only PATH: no jq, no python3, nothing the fallback may lean on
+	// beyond what FreeBSD ships. Resolve from the system directories rather
+	// than LookPath: installer tests earlier in this package prepend stub
+	// directories to PATH, and a stub that their cleanup already removed
+	// would leave a dangling symlink and a 127 in the child shell.
+	bin := t.TempDir()
+	for _, tool := range []string{"tr", "awk", "sed", "grep", "cat"} {
+		path := ""
+		for _, dir := range []string{"/bin", "/usr/bin", "/usr/local/bin", "/sbin", "/usr/sbin"} {
+			candidate := filepath.Join(dir, tool)
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+				path = candidate
+				break
+			}
+		}
+		if path == "" {
+			t.Skipf("no %s in the system directories to build a base-only PATH", tool)
+		}
+		if err := os.Symlink(path, filepath.Join(bin, tool)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	basePath := []string{"PATH=" + bin}
+
+	const hex64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	// Pretty-printed like the GitHub API, which is what the installer actually
+	// receives — the digest is not on the same line as the name.
+	release := `{
+  "assets": [
+    {
+      "name": "urnetwork-provider-v1-freebsd-amd64.tar.gz",
+      "size": 123,
+      "digest": "sha256:` + hex64 + `",
+      "browser_download_url": "https://example.invalid/urnetwork-provider-v1-freebsd-amd64.tar.gz"
+    },
+    {
+      "name": "other.txt",
+      "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  ]
+}`
+	basePath = append(basePath, "RELEASE="+release, "ASSET=urnetwork-provider-v1-freebsd-amd64.tar.gz")
+
+	run := func(expr string) (string, error) {
+		cmd := exec.Command("/bin/sh", "-c", scanFn+"\n"+digestFn+"\n"+listFn+"\n"+expr)
+		cmd.Env = basePath
+		out, err := cmd.CombinedOutput()
+		return strings.TrimSpace(string(out)), err
+	}
+
+	if got, err := run(`command -v jq || command -v python3 || echo none`); err != nil || got != "none" {
+		t.Fatalf("base-only PATH still has a parser (%q, %v); the fallback is not being exercised", got, err)
+	}
+	if got, err := run(`get_asset_digest_from_api_response "$RELEASE" "$ASSET"`); err != nil || got != hex64 {
+		t.Errorf("digest on base tools = %q (%v), want %q", got, err, hex64)
+	}
+	if _, err := run(`release_lists_asset "$RELEASE" "$ASSET"`); err != nil {
+		t.Errorf("release_lists_asset rejected a listed asset: %v", err)
+	}
+	if _, err := run(`release_lists_asset "$RELEASE" "absent.tar.gz"`); err == nil {
+		t.Error("release_lists_asset accepted an asset the release does not list")
+	}
+	// The download URL repeats the filename; a listing must come from "name".
+	if _, err := run(`release_lists_asset '{"assets":[{"url":"https://x/urnetwork-provider-v1-freebsd-amd64.tar.gz","name":"other.txt"}]}' "$ASSET"`); err == nil {
+		t.Error("release_lists_asset matched a browser_download_url instead of a name")
+	}
+	if got, err := run(`get_asset_digest_from_api_response '{"assets":[{"name":"urnetwork-provider-v1-freebsd-amd64.tar.gz","digest":null}]}' "$ASSET"`); err != nil || got != "" {
+		t.Errorf("null digest on base tools = %q (%v), want empty", got, err)
+	}
+	// A following asset must never lend its digest to the requested asset.
+	if got, err := run(`get_asset_digest_from_api_response '{"assets":[{"name":"urnetwork-provider-v1-freebsd-amd64.tar.gz"},{"digest":"sha256:` + hex64 + `","name":"other"}]}' "$ASSET"`); err != nil || got != "" {
+		t.Errorf("digest leaked across assets: %q (%v)", got, err)
+	}
+	// GitHub may emit nested uploader objects and digest before name.
+	if got, err := run(`get_asset_digest_from_api_response '{"assets":[{"digest":"sha256:` + hex64 + `","uploader":{"name":"other"},"name":"urnetwork-provider-v1-freebsd-amd64.tar.gz"}]}' "$ASSET"`); err != nil || got != hex64 {
+		t.Errorf("reordered nested asset digest = %q (%v), want %q", got, err, hex64)
+	}
+	// Two assets in either list order, and with digest before name in one
+	// object: each must resolve to its own digest, never the neighbour's.
+	const hexTool = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+	const prov = "urnetwork-provider-v1-freebsd-amd64.tar.gz"
+	const tool = "urnet-tools-freebsd-amd64"
+	for _, doc := range []struct{ name, json string }{
+		{"provider first", `{"assets":[{"name":"` + prov + `","digest":"sha256:` + hex64 + `"},{"name":"` + tool + `","digest":"sha256:` + hexTool + `"}]}`},
+		{"tool first", `{"assets":[{"name":"` + tool + `","digest":"sha256:` + hexTool + `"},{"name":"` + prov + `","digest":"sha256:` + hex64 + `"}]}`},
+		{"digest before name", `{"assets":[{"digest":"sha256:` + hexTool + `","name":"` + tool + `"},{"digest":"sha256:` + hex64 + `","name":"` + prov + `"}]}`},
+		{"tool without digest first", `{"assets":[{"name":"` + tool + `"},{"digest":"sha256:` + hex64 + `","name":"` + prov + `"}]}`},
+	} {
+		wantTool := hexTool
+		if doc.name == "tool without digest first" {
+			wantTool = ""
+		}
+		if got, err := run(`get_asset_digest_from_api_response '` + doc.json + `' ` + prov); err != nil || got != hex64 {
+			t.Errorf("%s: provider digest = %q (%v), want %q", doc.name, got, err, hex64)
+		}
+		if got, err := run(`get_asset_digest_from_api_response '` + doc.json + `' ` + tool); err != nil || got != wantTool {
+			t.Errorf("%s: tool digest = %q (%v), want %q", doc.name, got, err, wantTool)
+		}
+	}
+	for _, malformed := range []string{
+		`{"name":"urnetwork-provider-v1-freebsd-amd64.tar.gz","assets":[]}`,
+		`{"assets":[{"name":"urnetwork-provider-v1-freebsd-amd64.tar.gz"},{"name":"urnetwork-provider-v1-freebsd-amd64.tar.gz"}]}`,
+		`{"assets":[{"name":"urnetwork-provider-v1-freebsd-amd64.tar.gz"}]`,
+	} {
+		cmd := exec.Command("/bin/sh", "-c", scanFn+"\n"+listFn+"\nrelease_lists_asset \"$RELEASE_CASE\" \"$ASSET\"")
+		cmd.Env = append(basePath, "RELEASE_CASE="+malformed)
+		if out, err := cmd.CombinedOutput(); err == nil {
+			t.Errorf("accepted absent, duplicate or malformed asset metadata %q: %s", malformed, out)
 		}
 	}
 }

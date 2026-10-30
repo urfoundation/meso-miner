@@ -56,6 +56,148 @@ pr_warn() {
     printf "%s: $fmt\n" "$me" "$@" >&2
 }
 
+# get_asset_digest_from_api_response extracts the sha256 hex digest for an asset.
+get_asset_digest_from_api_response() {
+    _rel="$1"
+    _ast="$2"
+    _dig=""
+    if command -v jq > /dev/null 2>&1; then
+        _dig="$(printf '%s' "$_rel" | jq -r --arg a "$_ast" '
+            (.assets[]? | select(.name == $a) | .digest)
+            | select(type == "string")
+            | sub("^sha256:"; "")
+            | select(test("^[0-9a-fA-F]{64}$"))
+        ' 2>/dev/null || true)"
+    elif command -v python3 > /dev/null 2>&1; then
+        _dig="$(printf '%s' "$_rel" | python3 -c '
+import sys, json, re
+try:
+    doc = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+val = ""
+for asset in doc.get("assets", []):
+    if asset.get("name") == sys.argv[1]:
+        val = asset.get("digest") or ""
+        break
+val = val.replace("sha256:", "")
+print(val if re.fullmatch(r"[0-9a-fA-F]{64}", val) else "")
+' "$_ast" 2>/dev/null || true)"
+    else
+        _dig="$(release_asset_scan "$_rel" "$_ast" digest 2>/dev/null || true)"
+    fi
+    printf '%s' "$_dig"
+}
+
+release_lists_asset() {
+    [ -n "$1" ] || return 1
+    if command -v jq >/dev/null 2>&1; then
+        printf '%s' "$1" | jq -e --arg a "$2" 'any(.assets[]?; .name == $a)' >/dev/null 2>&1
+    elif command -v python3 >/dev/null 2>&1; then
+        printf '%s' "$1" | python3 -c 'import sys,json
+try:
+ d=json.load(sys.stdin); sys.exit(0 if any(a.get("name")==sys.argv[1] for a in d.get("assets",[])) else 1)
+except Exception: sys.exit(1)' "$2" >/dev/null 2>&1
+    else
+        release_asset_scan "$1" "$2" list
+    fi
+}
+
+# release_asset_scan reads the release metadata with awk alone: FreeBSD ships
+# neither jq nor python3 in the base system, and this installer installs no
+# packages, so a clean host still has to be able to check the asset and its
+# digest. Records are comma separated, which holds for both the pretty-printed
+# API response and a compact one. Mode "list" answers whether the release
+# lists the asset; mode "digest" prints its 64-hex sha256 (empty when absent).
+release_asset_scan() {
+    printf '%s' "$1" | A="$2" M="$3" awk '
+        function ws() { while (substr(doc, pos, 1) ~ /[ \t\r\n]/ && pos <= length(doc)) pos++ }
+        function string(    c,e,h,out) {
+            if (substr(doc, pos++, 1) != "\"") { bad=1; return "" }
+            out=""
+            while (pos <= length(doc)) {
+                c=substr(doc,pos++,1)
+                if (c == "\"") return out
+                if (c == "\\") {
+                    e=substr(doc,pos++,1)
+                    if (e == "u") {
+                        h=substr(doc,pos,4); pos+=4
+                        if (length(h)!=4 || h !~ /^[0-9a-fA-F]+$/) { bad=1; return "" }
+                        out=out "?"
+                    } else if (e == "\"" || e == "\\" || e == "/") out=out e
+                    else if (e ~ /^[bfnrt]$/) out=out "?"
+                    else { bad=1; return "" }
+                } else out=out c
+            }
+            bad=1; return ""
+        }
+        function value(kind,    c,k,v,t,name,digest,hasname,hasdigest,count) {
+            ws(); c=substr(doc,pos,1); scalar=""; scalar_string=0
+            if (c == "{") {
+                if (kind == "assets") { bad=1; return }
+                pos++; ws(); count=0; name=""; digest=""; hasname=0; hasdigest=0
+                while (substr(doc,pos,1) != "}") {
+                    if (count++ && substr(doc,pos++,1) != ",") { bad=1; return }
+                    ws(); if (substr(doc,pos,1) != "\"") { bad=1; return }
+                    k=string(); ws(); if (substr(doc,pos++,1) != ":") { bad=1; return }
+                    t="other"; if (kind == "root" && k == "assets") t="assets"
+                    value(t); if (bad) return
+                    if (kind == "asset" && k == "name") { if (hasname++) { bad=1; return }; if (scalar_string) name=scalar }
+                    if (kind == "asset" && k == "digest") { if (hasdigest++) { bad=1; return }; if (scalar_string) digest=scalar }
+                    ws()
+                }
+                pos++; scalar_string=0
+                if (kind == "asset" && name == ENVIRON["A"]) { found++; answer=digest }
+                return
+            }
+            if (c == "[") {
+                if (kind == "root" || kind == "asset") { bad=1; return }
+                pos++; ws(); count=0
+                while (substr(doc,pos,1) != "]") {
+                    if (count++ && substr(doc,pos++,1) != ",") { bad=1; return }
+                    t="other"; if (kind == "assets") t="asset"
+                    value(t); if (bad) return; ws()
+                }
+                pos++; scalar_string=0; return
+            }
+            if (kind == "root" || kind == "assets" || kind == "asset") { bad=1; return }
+            if (c == "\"") { scalar=string(); scalar_string=1; return }
+            t=substr(doc,pos); if (match(t,/^(true|false|null|-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?)/) != 1) { bad=1; return }
+            pos+=RLENGTH
+        }
+        { doc=doc $0 "\n" }
+        END {
+            pos=1; value("root"); ws()
+            if (bad || pos <= length(doc) || found != 1) exit 1
+            if (ENVIRON["M"] == "digest") {
+                sub(/^sha256:/,"",answer)
+                if (length(answer)==64 && answer ~ /^[0-9a-fA-F]+$/) print answer
+            }
+        }'
+}
+
+compute_sha256_file() {
+    _f="$1"
+    [ -f "$_f" ] || return 1
+    if command -v sha256 > /dev/null 2>&1; then
+        sha256 -q "$_f"
+    elif command -v openssl > /dev/null 2>&1; then
+        openssl dgst -sha256 "$_f" | awk '{print $NF}'
+    elif command -v sha256sum > /dev/null 2>&1; then
+        sha256sum "$_f" | awk '{print $1}'
+    else
+        return 1
+    fi
+}
+
+verify_sha256_file() {
+    _f="$1"
+    _exp="$2"
+    [ -n "$_exp" ] && [ -f "$_f" ] || return 1
+    _act="$(compute_sha256_file "$_f")"
+    [ -n "$_act" ] && [ "$_act" = "$_exp" ]
+}
+
 # http_fetch <url> [output-file]
 #
 # One downloader for every fetch the installer makes. FreeBSD ships fetch(1) in
@@ -678,6 +820,35 @@ do_install() {
     # separate mirror, so a failed download here is reported and the install
     # stops rather than retrying against a second host.
     tarball_url="https://github.com/urfoundation/meso-miner/releases/download/$tag/urnetwork-provider-$tag-freebsd-$goarch.tar.gz"
+    provider_asset="urnetwork-provider-$tag-freebsd-$goarch.tar.gz"
+
+    # Fail closed before any download. The digest comes from the release
+    # metadata, so the tarball is fetched only when that metadata lists it.
+    # An unreachable or rate-limited API used to leave the digest empty and
+    # install the tarball unverified.
+    #
+    # No parser prerequisite: jq and python3 are not in the FreeBSD base
+    # system and this installer installs no packages, so both helpers fall
+    # back to release_asset_scan.
+    _rel_extra=""
+    if ! release_lists_asset "$release_json" "$provider_asset"; then
+        _rel_extra="$(http_fetch "$github_api/releases/tags/$tag" 2>/dev/null || true)"
+        release_lists_asset "$_rel_extra" "$provider_asset" && release_json="$_rel_extra"
+    fi
+    if ! release_lists_asset "$release_json" "$provider_asset"; then
+        if [ -z "$release_json" ]; then
+            pr_err "Could not fetch release metadata for %s to verify asset %s (GitHub API unreachable or rate-limited); refusing to install." "$tag" "$provider_asset"
+        else
+            pr_err "Release metadata for %s does not list asset %s; refusing to install." "$tag" "$provider_asset"
+        fi
+        exit 1
+    fi
+    provider_digest="$(get_asset_digest_from_api_response "$release_json" "$provider_asset")"
+    if [ -z "$provider_digest" ]; then
+        pr_err "Cannot establish a sha256 digest for provider asset '%s' in release %s (the release publishes none or the metadata is unreadable); refusing to install an unverified binary." "$provider_asset" "$tag"
+        exit 1
+    fi
+
     pr_info "Downloading %s..." "$tarball_url"
 
     tmpdir="$(mktemp -d)"
@@ -686,6 +857,14 @@ do_install() {
         rm -rf "$tmpdir"
         exit 1
     fi
+
+    if ! verify_sha256_file "$tmpdir/provider.tar.gz" "$provider_digest"; then
+        actual="$(compute_sha256_file "$tmpdir/provider.tar.gz")"
+        pr_err "SHA-256 digest mismatch for provider asset '%s': expected %s, got %s" "$provider_asset" "$provider_digest" "${actual:-<unknown>}"
+        rm -rf "$tmpdir"
+        exit 1
+    fi
+    pr_info "Provider asset sha256 verified (%s)" "$provider_asset"
 
     tar -xzf "$tmpdir/provider.tar.gz" -C "$tmpdir" || {
         pr_err "Extract failed"
@@ -729,37 +908,14 @@ do_install() {
     staged_bin="$staged"
     priv cp "$provider_src" "$staged" || { pr_err "Failed to stage binary"; priv_rm "$staged"; rm -rf "$tmpdir"; exit 1; }
     priv chmod 755 "$staged"
-    # The release tool is installed only when its digest can be verified.
+    # The release tool is installed only when its digest can be verified, and
+    # a release that publishes none is a release bug: refuse, never skip. The
+    # digest comes from the same metadata document as the provider's, not a
+    # second fetch that could disagree with it or fail after staging began.
     tool_asset="urnet-tools-freebsd-$goarch"
-    # jq prints "null" for a missing field, so accept only a real hex digest.
-    tool_digest=""
-    release_json="$(http_fetch "$github_api/releases/tags/$tag" 2>/dev/null)"
-    if command -v jq > /dev/null 2>&1; then
-        tool_digest="$(printf '%s' "$release_json" | jq -r --arg a "$tool_asset" '
-            (.assets[]? | select(.name == $a) | .digest)
-            | select(type == "string")
-            | sub("^sha256:"; "")
-            | select(test("^[0-9a-fA-F]{64}$"))
-        ' 2>/dev/null || true)"
-    elif command -v python3 > /dev/null 2>&1; then
-        tool_digest="$(printf '%s' "$release_json" | python3 -c '
-import sys, json, re
-try:
-    doc = json.load(sys.stdin)
-except Exception:
-    sys.exit(0)
-val = ""
-for asset in doc.get("assets", []):
-    if asset.get("name") == sys.argv[1]:
-        val = asset.get("digest") or ""
-        break
-val = val.replace("sha256:", "")
-print(val if re.fullmatch(r"[0-9a-fA-F]{64}", val) else "")
-' "$tool_asset" 2>/dev/null || true)"
-    fi
-
+    tool_digest="$(get_asset_digest_from_api_response "$release_json" "$tool_asset")"
     if [ -z "$tool_digest" ]; then
-        pr_err "Cannot verify urnet-tools: release digest is unavailable"
+        pr_err "Cannot verify urnet-tools: release %s publishes no readable sha256 digest for '%s'" "$tag" "$tool_asset"
         exit 1
     fi
     if ! http_fetch "https://github.com/urfoundation/meso-miner/releases/download/$tag/$tool_asset" "$tmpdir/$tool_asset" 2>/dev/null; then
@@ -769,14 +925,8 @@ print(val if re.fullmatch(r"[0-9a-fA-F]{64}", val) else "")
     staged_tool="$install_path/bin/.urnet-tools.new.$$"
     priv cp "$tmpdir/$tool_asset" "$staged_tool" || { pr_err "Failed to stage urnet-tools"; exit 1; }
     priv chmod 755 "$staged_tool" || { pr_err "Failed to make urnet-tools executable"; exit 1; }
-    if command -v sha256 > /dev/null 2>&1; then
-        actual="$(priv sha256 -q "$staged_tool")"
-    elif command -v openssl > /dev/null 2>&1; then
-        actual="$(priv openssl dgst -sha256 "$staged_tool" | awk '{print $NF}')"
-    else
-        actual=""
-    fi
-    if [ -z "$actual" ] || [ "$actual" != "$tool_digest" ]; then
+    # Verify the staged file itself, not only the downloaded source.
+    if ! verify_sha256_file "$staged_tool" "$tool_digest"; then
         pr_err "Cannot verify urnet-tools: digest mismatch or no checksum tool"
         exit 1
     fi
