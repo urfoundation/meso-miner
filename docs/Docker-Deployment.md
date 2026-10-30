@@ -54,9 +54,31 @@ ghcr.io/urfoundation/meso-miner:latest
 
 ## 🔑 Persistent JWT
 
-The JWT is stored inside the container at `/root/.urnetwork/jwt`. Without a persistent volume, every container restart wipes it and forces re-authentication using the original auth code, which is single-use and will fail on the second attempt.
+The JWT is stored inside the container at `/root/.urnetwork/jwt`. Restarting the same container keeps its writable layer; removing or recreating the container loses the JWT unless `/root/.urnetwork` is mounted.
 
-All examples below mount a config volume at `/root/.urnetwork`. With this volume in place, the startup script detects the existing JWT and skips authentication on later starts. Auth codes are only consumed once: on first run or after manually removing the config volume.
+All examples below mount a config volume at `/root/.urnetwork`. Stable and JWT modes reuse a valid stored JWT on later starts. Nightly mode currently removes the stored JWT before its password-login flow, so it does not reuse that session at container start. Auth codes in JWT mode are single-use, so keep the state volume and provide a code only on first run or after removing it.
+
+## 🚦 Startup Checks and Debug Output
+
+**Proxy loading checks `/app/proxy.txt`.** Startup logs `[INFO] Checking proxy configuration`, then either `[INFO] proxy.txt found; adding proxy` or `[INFO] No proxy.txt found; skipping proxy`.
+
+The current startup script removes `~/.urnetwork/proxy` before checking for the mounted file. Without `/app/proxy.txt`, the saved file-proxy configuration is cleared rather than kept. Mount a current proxy list at `/app/proxy.txt` when using file-based proxies.
+
+**Do not use `DEBUG=true` with real login credentials.** The password-login path prints `USER_AUTH`, `PASSWORD` and `AUTH_OUTPUT` to the container log. The current startup script does not redact those values.
+
+**The IP checker reports the shell pipeline result.** With `ENABLE_IP_CHECKER=true`, the startup script runs the external checker and logs:
+
+```text
+[INFO] Checking current public IP...
+[INFO] IP checker script ran successfully
+[WARN] Could not fetch or execute IP checker script
+```
+
+The success or warning does not separately prove whether the download succeeded. The current `curl | sh` pipeline can report success when the download fails but the shell exits successfully.
+
+**Nightly startup checks the binary before custom network selection.** With `BUILD=nightly`, the update check runs before the custom network selector because a fresh image may not yet contain the nightly provider binary for its architecture.
+
+For the exact startup log messages, see [Log Message Reference](/urfoundation/meso-miner/blob/main/LOG_REFERENCE.md).
 
 ## 🏃 Docker Run - GHCR
 

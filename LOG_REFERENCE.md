@@ -896,6 +896,7 @@ instance_id: 019e2d67-5a73-4bb3-6661-df9b5c595003
 ## 🔄 Startup — Proxy Loading
 
 ```
+[INFO] Checking proxy configuration
 [INFO] proxy.txt found; adding proxy
 added server 203.0.113.22:1081 (91***rn/cf***9m)
 Using 1000 proxy servers:
@@ -907,6 +908,23 @@ Using 1000 proxy servers:
 - Each `added server` line confirms a proxy was registered successfully
 - Credentials are partially redacted in logs (`***`)
 - `Using N proxy servers:` summarizes the loaded pool with index assignments
+- Without `/app/proxy.txt`, startup logs `[INFO] No proxy.txt found; skipping proxy`.
+- The current startup script removes `~/.urnetwork/proxy` before checking for `/app/proxy.txt`; with no mounted file, it clears the saved file-proxy configuration.
+
+### Public IP checker and password-login debug output
+
+`ENABLE_IP_CHECKER=true` logs these messages around the external checker:
+
+```
+[INFO] Checking current public IP...
+[INFO] IP checker script ran successfully
+[WARN] Could not fetch or execute IP checker script
+[INFO] IP checker disabled
+```
+
+The success or warning reports the `curl | sh` pipeline result. It does not separately prove that the download succeeded.
+
+When `DEBUG=true`, the password-login path prints `DEBUG: USER_AUTH=`, `DEBUG: PASSWORD=`, `DEBUG: AUTH_EXIT_CODE=` and `DEBUG: AUTH_OUTPUT=` followed by their values. The first two contain the credentials. Treat the output line as sensitive too, and do not share these logs.
 
 ### `proxy.state` reconciliation
 
@@ -921,6 +939,18 @@ Emitted by the reload reconciler when it reconciles `~/.urnetwork/proxy.state` a
 |---|---|
 | `pruned N stale proxy.state entries (no longer desired)` | `N` state entries were deleted because their proxies are gone from every source. On the first run after upgrading, this can be a large number: the accumulated ghost backlog being cleaned, not an outage. |
 | `skipping state prune this cycle: proxy_url.json unavailable` | The URL cache could not be read, so the prune pass was skipped rather than risking deletion of state for still-desired URL proxies over a transient error. Nothing was removed this cycle; the next reload retries. |
+
+---
+
+## 🌐 Proxy URL Fetch Failure
+
+A failed URL source prints the underlying cause on a separate line:
+
+```text
+[proxy][url] fetch failed for raw.githubusercontent.com/x/y/socks5.txt: fetch: context deadline exceeded (skipping this cycle)
+```
+
+The cycle headline reports the number of failed sources; this line carries the reason. The error does not repeat the original request URL, so query credentials are not logged there. The source label is a sanitized host and path, and the line is retained in the important log.
 
 ---
 
