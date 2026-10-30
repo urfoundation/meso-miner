@@ -56,27 +56,26 @@ ghcr.io/urfoundation/meso-miner:latest
 
 The JWT is stored inside the container at `/root/.urnetwork/jwt`. Restarting the same container keeps its writable layer; removing or recreating the container loses the JWT unless `/root/.urnetwork` is mounted.
 
-All examples below mount a config volume at `/root/.urnetwork`. Stable and JWT modes reuse a valid stored JWT on later starts. Nightly mode currently removes the stored JWT before its password-login flow, so it does not reuse that session at container start. Auth codes in JWT mode are single-use, so keep the state volume and provide a code only on first run or after removing it.
+All examples below mount a config volume at `/root/.urnetwork`. Stable and JWT modes reuse a valid stored JWT on later starts. Nightly mode reuses a valid stored JWT the same way, and removes it only when it is expired or invalid. Auth codes in JWT mode are single-use, so keep the state volume and provide a code only on first run or after removing it.
 
 ## 🚦 Startup Checks and Debug Output
 
-**Proxy loading checks `/app/proxy.txt`.** Startup logs `[INFO] Checking proxy configuration`, then either `[INFO] proxy.txt found; adding proxy` or `[INFO] No proxy.txt found; skipping proxy`.
+**The saved proxy configuration survives a start without `proxy.txt`.** Startup logs `[INFO] Checking proxy configuration`, then `[INFO] proxy.txt found; adding proxy`, or `[INFO] No proxy.txt found; kept existing proxy configuration` (`none configured` when nothing was saved). The start script no longer deletes `~/.urnetwork/proxy` before it looks at `/app/proxy.txt`. A mounted file is imported into a staging directory and replaces the saved configuration only if the import produced valid servers. A failed import keeps a usable saved configuration and the container carries on with it (`[WARN] Proxy import failed; kept the existing configuration`). If nothing was saved either, the container stops with `[ERROR] Proxy import failed and no configuration is saved; refusing to start without the mounted proxy`, rather than start sending traffic from its own address.
 
-The current startup script removes `~/.urnetwork/proxy` before checking for the mounted file. Without `/app/proxy.txt`, the saved file-proxy configuration is cleared rather than kept. Mount a current proxy list at `/app/proxy.txt` when using file-based proxies.
+**`DEBUG=true` does not print your credentials.** The password-login path prints whether each of the account email and password is set and its length, plus the auth command's exit code. The auth output is replaced with `DEBUG: AUTH_OUTPUT=[redacted]` when it contains either value (the match ignores case); other auth output is still printed, so read a debug log before you share it.
 
-**Do not use `DEBUG=true` with real login credentials.** The password-login path prints `USER_AUTH`, `PASSWORD` and `AUTH_OUTPUT` to the container log. The current startup script does not redact those values.
-
-**The IP checker reports the shell pipeline result.** With `ENABLE_IP_CHECKER=true`, the startup script runs the external checker and logs:
+**The IP checker reports a failed download as a failure.** With `ENABLE_IP_CHECKER=true` the script downloads the checker to a temporary file and runs it only if the download succeeded:
 
 ```text
 [INFO] Checking current public IP...
+[WARN] IP checker fetch failed
+[WARN] IP checker script failed
 [INFO] IP checker script ran successfully
-[WARN] Could not fetch or execute IP checker script
 ```
 
-The success or warning does not separately prove whether the download succeeded. The current `curl | sh` pipeline can report success when the download fails but the shell exits successfully.
+A failed download logs the first warning and nothing is run; a checker that runs and fails logs the second.
 
-**Nightly startup checks the binary before custom network selection.** With `BUILD=nightly`, the update check runs before the custom network selector because a fresh image may not yet contain the nightly provider binary for its architecture.
+**Nightly startup checks the binary before custom network selection.** With `BUILD=nightly`, the update check runs before the proxy import and before the custom network selector, because a fresh image may not yet contain the nightly provider binary for its architecture.
 
 For the exact startup log messages, see [Log Message Reference](/urfoundation/meso-miner/blob/main/LOG_REFERENCE.md).
 
