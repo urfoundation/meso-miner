@@ -829,10 +829,12 @@ Persists the current billable transfer rate to `~/.urnetwork/billable_rate` on a
 ## 📑 Contract Lifecycle
 
 ```
-[contract] acquired size=256 KiB destination=0142...c3a9
-[contract] denied = insufficient allowance destination=0142...c3a9
-[contract] closed acked=198 KiB allotted=256 KiB util=77% destination=0142...c3a9
+[contract] acquired | proxy[3] (203.0.113.22:1081) size=256 KiB destination=0142...c3a9
+[contract] denied | proxy[3] (203.0.113.22:1081) = insufficient allowance destination=0142...c3a9
+[contract] closed | proxy[3] (203.0.113.22:1081) acked=198 KiB allotted=256 KiB util=77% destination=0142...c3a9
 ```
+
+The provider names the proxy a contract belongs to after a vertical bar, set off from the verb: `acquired`, `denied`, `closed` and `checkpointed` (the line a close report prints when it is sent as a checkpoint instead of a final close) all read `[contract] <verb> | proxy[<index>] (<address>)`, and a direct slot reads `proxy[0] (direct)`. The bar is the only change from earlier releases, which joined the proxy to the verb with a space. A contract manager with no proxy description prints no bar and no proxy.
 
 A contract is the platform's bandwidth grant for relaying a client's traffic. These lines bracket a contract's life:
 
@@ -908,8 +910,8 @@ Using 1000 proxy servers:
 - Each `added server` line confirms a proxy was registered successfully
 - Credentials are partially redacted in logs (`***`)
 - `Using N proxy servers:` summarizes the loaded pool with index assignments
-- Without `/app/proxy.txt`, startup logs `[INFO] No proxy.txt found; skipping proxy`.
-- The current startup script removes `~/.urnetwork/proxy` before checking for `/app/proxy.txt`; with no mounted file, it clears the saved file-proxy configuration.
+- Without `/app/proxy.txt`, startup logs `[INFO] No proxy.txt found; kept existing proxy configuration` (the saved configuration is untouched) or `[INFO] No proxy.txt found; none configured`.
+- A proxy import that could not complete is a `[WARN]` line and leaves the saved configuration as it was: `Proxy staging failed; kept existing configuration` (or `none configured`), or `Proxy replacement failed: <reason>; existing configuration unchanged`. With a usable saved configuration the start then logs `[WARN] Proxy import failed; kept the existing configuration` and carries on. With none, it logs `[ERROR] Proxy import failed and no configuration is saved; refusing to start without the mounted proxy` and the container stops.
 
 ### Public IP checker and password-login debug output
 
@@ -917,14 +919,16 @@ Using 1000 proxy servers:
 
 ```
 [INFO] Checking current public IP...
+[WARN] IP checker fetch failed
+[WARN] IP checker fetch failed: could not create temporary file
+[WARN] IP checker script failed
 [INFO] IP checker script ran successfully
-[WARN] Could not fetch or execute IP checker script
 [INFO] IP checker disabled
 ```
 
-The success or warning reports the `curl | sh` pipeline result. It does not separately prove that the download succeeded.
+The script downloads the checker to a temporary file first and runs it only if the download succeeded, so a failed fetch is never passed to `sh`.
 
-When `DEBUG=true`, the password-login path prints `DEBUG: USER_AUTH=`, `DEBUG: PASSWORD=`, `DEBUG: AUTH_EXIT_CODE=` and `DEBUG: AUTH_OUTPUT=` followed by their values. The first two contain the credentials. Treat the output line as sensitive too, and do not share these logs.
+When `DEBUG=true`, the password-login path prints `DEBUG: USER_AUTH set=<yes|no> length=<n>` and `DEBUG: PASSWORD set=<yes|no> length=<n>` instead of the values, then `DEBUG: AUTH_EXIT_CODE=` and `DEBUG: AUTH_OUTPUT=`. The output line reads `[redacted]` when it contains either credential (the match ignores case); other auth output is printed as is, so still read a debug log before you share it.
 
 ### `proxy.state` reconciliation
 
