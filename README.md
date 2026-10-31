@@ -318,7 +318,7 @@ dashboard. See [Monitoring](docs/Monitoring.md).
 **Wiki:**
 
 - [Online GitHub Wiki](https://github.com/urfoundation/meso-miner/wiki)
-- [CI and Release Process](https://github.com/urfoundation/meso-miner/wiki/CI-and-Release-Process)
+- [Installer Matrix CI](https://github.com/urfoundation/meso-miner/wiki/Installer-Matrix-CI)
 
 ---
 

@@ -3,7 +3,7 @@
 The extender role is a work in progress and does not activate yet. `URNETWORK_EXTENDER` starts the role's listener, but activation, the directory, gossip and the probes are not implemented, so the role serves no traffic (`provider/extender_role.go:29-36`). The sections below describe the switches and the carrier layout the role is built around. It is opt-in and off by default.
 
 > [!WARNING]
-> The extender role is a work in progress and is unproven. It has not been verified in production, and it does not run on the fleet. The steps below describe what the code does when the switch is set (#289, #290); they do not show the role serving traffic.
+> The extender role is a work in progress and is unproven. It has not been verified in production, and it does not run on the fleet. The steps below describe what the code does when the switch is set (urf PRs 39 to 43); they do not show the role serving traffic.
 
 ## Before you start
 

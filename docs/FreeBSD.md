@@ -5,7 +5,8 @@ This page is the complete guide to running the URnetwork provider on FreeBSD (am
 The provider runs as an `rc.d` service named `urnetwork` under an unprivileged user. There is no hosted one-liner: fetch this repository's script and run it, and it downloads the FreeBSD release archive for your architecture.
 
 ```sh
-curl -fSsL https://raw.githubusercontent.com/urfoundation/meso-miner/refs/heads/main/scripts/Provider_Install_FreeBSD.sh | sh
+fetch -qo urnet-install.sh https://raw.githubusercontent.com/urfoundation/meso-miner/refs/heads/main/scripts/Provider_Install_FreeBSD.sh
+sudo sh urnet-install.sh install
 ```
 
 The provider lives in a **root-owned** tree at `/usr/local/libexec/urnetwork-provider`, while the state directory stays in the service user's home. The service user runs the provider but cannot rewrite the binary that root executes.
