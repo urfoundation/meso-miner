@@ -4,12 +4,8 @@ This page is the complete guide to running the URnetwork provider on FreeBSD (am
 
 The provider runs as an `rc.d` service named `urnetwork` under an unprivileged user. There is no hosted one-line installer for FreeBSD: you fetch the installer script and run it, and it downloads the release for your architecture.
 
-> [!WARNING]
-> **Release artifacts on meso-miner:** as of `v2026.10.6-1064547980-meso`, meso-miner releases do
-> not yet ship the FreeBSD provider binary or the `urnet-tools-freebsd-*` assets. The installer,
-> the rc.d service and the tuning below are all real in this repo, but `install` cannot fetch
-> FreeBSD binaries until the release pipeline publishes them (tracked follow-up). Everything on
-> this page applies as soon as that lands.
+> [!NOTE]
+> **Release artifacts on meso-miner:** the `v2026.10.22-1078667370-meso` and `v2026.10.24-1080497440-meso` releases carry the FreeBSD provider tarballs (`urnetwork-provider-<tag>-freebsd-amd64.tar.gz` and `-freebsd-arm64.tar.gz`) and the `urnet-tools-freebsd-amd64` and `urnet-tools-freebsd-arm64` assets. Releases before `v2026.10.22-1078667370-meso` were not checked for these assets.
 
 ## Before you start
 
