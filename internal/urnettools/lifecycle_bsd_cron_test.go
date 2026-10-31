@@ -75,3 +75,28 @@ func TestBSDScheduledUpdate(t *testing.T) {
 		t.Errorf("non-root = (%q, %q, %v)", tool, logDir, err)
 	}
 }
+
+// When the swap runs as root, the FreeBSD install tree must stay root-owned:
+// the binary is never chowned to the service user, because root executes it
+// afterwards. A user-session tree is still chowned, so the guard is the tree
+// check and not a blanket skip.
+func TestInstallBinaryKeepsBSDTreeRootOwned(t *testing.T) {
+	cases := []struct {
+		name string
+		user string
+		euid int
+		dst  string
+		want bool
+	}{
+		{"root swap in the bsd tree stays root-owned", "svc", 0, bsdInstallRoot + "/bin/urnetwork", false},
+		{"root swap of the bsd tool stays root-owned", "svc", 0, bsdRootToolPath, false},
+		{"root swap in a user tree is chowned to the user", "svc", 0, "/home/svc/.local/share/urnetwork-provider/bin/urnetwork", true},
+		{"a non-root swap never chowns", "svc", 1000, "/home/svc/bin/urnetwork", false},
+		{"no service user, nothing to chown", "", 0, "/home/svc/bin/urnetwork", false},
+	}
+	for _, c := range cases {
+		if got := installChownsToUser(c.user, c.euid, c.dst); got != c.want {
+			t.Errorf("%s: installChownsToUser(%q, %d, %q) = %v, want %v", c.name, c.user, c.euid, c.dst, got, c.want)
+		}
+	}
+}

@@ -1249,6 +1249,13 @@ func extractSingleFile(tarball, relPath, dst string) error {
 	return fmt.Errorf("path %s not found in tarball", relPath)
 }
 
+// installChownsToUser reports whether installBinary hands the swapped binary
+// to the service user. Root-owned install trees (OpenRC, FreeBSD) keep root
+// as the owner, so only the user-session layout is chowned, and only by root.
+func installChownsToUser(user string, euid int, dst string) bool {
+	return user != "" && euid == 0 && !openrcTreeOwnedByRoot(dst) && !bsdTreeOwnedByRoot(dst)
+}
+
 // installBinary copies src to dst preserving ownership for the given user,
 // then atomically renames into place.
 //
@@ -1298,7 +1305,7 @@ func installBinary(src, dst, user string) error {
 	// exists for the user-session (systemd) layout, where the binary lives
 	// in the user's own tree and must be theirs to replace via updates run
 	// without root.
-	if user != "" && os.Geteuid() == 0 && !openrcTreeOwnedByRoot(dst) {
+	if installChownsToUser(user, os.Geteuid(), dst) {
 		uid, gid, err := lookupUserIDs(user)
 		if err != nil {
 			tmpFile.Close()
