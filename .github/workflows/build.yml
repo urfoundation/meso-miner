@@ -274,7 +274,7 @@ jobs:
         run: |
           # The docker self-update scripts must ONLY ever fetch provider
           # releases from this fork. Any api.github.com/repos/<org>/<repo>
-          # URL in docker/scripts that is NOT full-bars/* is a silent
+          # URL in docker/scripts that is NOT urfoundation/* is a silent
           # upstream-replace of the hardened binary, so the guard fails the
           # build. shellcheck separately covers syntax (errors only; the
           # pre-existing SC2071/SC2155 warnings live on untouched lines).
@@ -283,10 +283,10 @@ jobs:
             while read -r url; do
               org_repo="$(printf '%s' "$url" | sed -E 's#.*/repos/([^/"]+/[^/"]+).*#\1#')"
               case "$org_repo" in
-                full-bars/*) ;;
+                urfoundation/*) ;;
                 *)
                   echo "VIOLATION $f: $url"
-                  echo "  -> docker update fetches must target full-bars/* only"
+                  echo "  -> docker update fetches must target urfoundation/* only"
                   violations=$((violations+1))
                   ;;
               esac
@@ -310,7 +310,7 @@ jobs:
 
           jq -e '.meta.version == "PLCN_v3"
                  and (.docker_images | length == 1)
-                 and ([.docker_images[]][0] | test("^ghcr\\.io/full-bars/meso-miner:latest$"))
+                 and ([.docker_images[]][0] | test("^ghcr\\.io/urfoundation/meso-miner:latest$"))
                  and .startup_commands.Default == "sh /app/entrypoint.sh"
                  and (.config.startup | fromjson | .done == "Provider")' "$egg" >/dev/null \
             || { echo "FAIL: egg JSON structure invalid"; exit 1; }
@@ -499,7 +499,7 @@ jobs:
         if: ${{ github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/') && (contains(github.ref, '-rc') || contains(github.ref, '-alpha') || contains(github.ref, '-beta')) }}
         run: |
           set -euo pipefail
-          REPO="full-bars/meso-miner"
+          REPO="urfoundation/meso-miner"
           TAG="${GITHUB_REF_NAME}"
           TOK=$(curl -sf "https://ghcr.io/token?scope=repository:${REPO}:pull&service=ghcr.io" \
                 | grep -o '"token":"[^"]*' | cut -d'"' -f4)
@@ -540,7 +540,7 @@ jobs:
           '{
             "embeds": [{
               "title": ("🐳 Docker Image Published — " + $version),
-              "description": ("**Platforms:** linux/amd64, linux/arm64\n\n**Pull:**\n```\ndocker pull ghcr.io/full-bars/meso-miner:" + $version + "\n```\n\n[View build run](" + $runUrl + ")"),
+              "description": ("**Platforms:** linux/amd64, linux/arm64\n\n**Pull:**\n```\ndocker pull ghcr.io/urfoundation/meso-miner:" + $version + "\n```\n\n[View build run](" + $runUrl + ")"),
               "color": 2406797,
               "footer": { "text": "URNetwork Release Monitor • Docker" }
             }]
