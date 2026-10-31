@@ -1,6 +1,6 @@
 # Run a provider as an extender
 
-A provider can also serve the extender role. It accepts inbound carrier connections, and forward requests are limited to destinations in its allow list. The role is opt-in and is off by default.
+A provider can also serve the extender role. The role is opt-in and off by default. The serving wiring has landed, but the role is not verified in production and does not activate there. When it runs, it accepts inbound carrier connections, and forward requests are limited to destinations in its allow list.
 
 ## Before you start
 
