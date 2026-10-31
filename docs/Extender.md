@@ -1,6 +1,8 @@
-# Run a provider as an extender
+# Extender role (work in progress, not active)
 
-A provider can also serve the extender role. The role is opt-in and off by default. The serving wiring has landed, but the role is not verified in production and does not activate there. When it runs, it accepts inbound carrier connections, and forward requests are limited to destinations in its allow list.
+The extender role is a work in progress. It does not activate yet, so no provider serves as an extender. The role is opt-in and off by default. The wiring has landed: setting `URNETWORK_EXTENDER=on` starts the role's listeners on the direct slot. Activation, the directory, gossip and probes are not implemented in this lane (`provider/extender_role.go:35-37`), so enabling the role does not make the provider an extender.
+
+The sections below describe what the role would need once activation is implemented. They are not a working setup guide.
 
 ## Before you start
 
@@ -16,7 +18,7 @@ The role keeps its identity in `~/.urnetwork/.provider.extender.key`. It creates
 
 ## Carrier ports
 
-The provider serves these carriers:
+The role would need these carriers:
 
 - TCP 443 for the TLS carrier.
 - UDP 443 for QUIC.
@@ -30,7 +32,7 @@ The container must publish the ports you intend to use, and the host firewall or
 
 ## Choose which destinations to forward
 
-Set `URNETWORK_EXTENDER_ALLOWED_HOSTS` to a comma-separated list of exact hostnames and `*.domain` patterns. An empty list refuses every forward request. A wildcard matches subdomains, but not the bare domain.
+Set `URNETWORK_EXTENDER_ALLOWED_HOSTS` to a comma-separated list of exact hostnames and `*.domain` patterns. An empty list refuses every forward request. A wildcard matches subdomains, but not the bare domain. The list has no effect until forwarding is implemented.
 
 For example, this allows `example.com` and subdomains of `example.org`:
 
@@ -46,7 +48,7 @@ When the list is empty, the provider logs:
 
 ## Docker
 
-The default Docker examples do not publish extender ports. To enable the role, add the environment settings, port mappings and persistent state volume:
+The default Docker examples do not publish extender ports. The example below starts the role's listeners with the environment settings, port mappings and persistent state volume. It does not make the provider an extender:
 
 ```sh
 docker run -d \
@@ -72,6 +74,6 @@ For the other image options and authentication modes, see [Docker Deployment](/u
 
 ## Check the role
 
-When no allow list is configured, the provider logs the warning shown above. If TCP 443 is unavailable but other carriers are listening, the role reports `tcp_unavailable` in its status and in the `urnet_extender_state` metric. The `urnet_extender_carrier_listening` metrics show which of TCP, QUIC and DNS are listening.
+When no allow list is configured, the provider logs the warning shown above. If TCP 443 is unavailable but other carriers are listening, the role reports `tcp_unavailable` in its status and in the `urnet_extender_state` metric. The `urnet_extender_carrier_listening` metrics show which of TCP, QUIC and DNS are listening. These fields report listener state only. They do not show that the role serves forwards.
 
 See [Log Message Reference](/urfoundation/meso-miner/blob/main/LOG_REFERENCE.md) for the extender log messages and [Configuration](/urfoundation/meso-miner/wiki/Configuration) for the environment settings.

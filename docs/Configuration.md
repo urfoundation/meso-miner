@@ -71,7 +71,7 @@ Quick jump:
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
-| `URNETWORK_EXTENDER` | `off` | Set to `on` to serve the extender role from the provider's direct (unproxied) slot: TCP 443 first, then QUIC 443 and DNS 4053. The role keeps its own identity at `~/.urnetwork/.provider.extender.key` (0600, created on first use). Binding 443 needs `CAP_NET_BIND_SERVICE` or root; the role reports partial availability as `tcp_unavailable` in the `[extender]` status line and the `urnet_extender_*` metrics. See [Extender](/urfoundation/meso-miner/wiki/Extender). Opt-in and off by default; the serving role is not verified in production. |
+| `URNETWORK_EXTENDER` | `off` | Set to `on` to start the extender role's listeners on the provider's direct (unproxied) slot: TCP 443 first, then QUIC 443 and DNS 4053. Activation is not implemented, so no provider serves as an extender. The role keeps its own identity at `~/.urnetwork/.provider.extender.key` (0600, created on first use). Binding 443 needs `CAP_NET_BIND_SERVICE` or root; the role reports partial availability as `tcp_unavailable` in the `[extender]` status line and the `urnet_extender_*` metrics. See [Extender](/urfoundation/meso-miner/wiki/Extender). Opt-in and off by default. |
 | `URNETWORK_EXTENDER_ALLOWED_HOSTS` | - | Comma-separated forward allow list, exact hosts or `*.domain` wildcards. This is the forward authorization: an empty list refuses every forward request. The provider logs a warning at start when the list is empty. |
 | `URNETWORK_EXTENDER_DNS53` | `off` | Set to `on` to also bind the dns carrier on port 53 beside 4053. Needs the same privilege as 443. |
 

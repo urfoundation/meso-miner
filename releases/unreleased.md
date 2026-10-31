@@ -8,7 +8,7 @@ Legend: **[redeploy]** needs the built artifact redeployed. **[installer]** need
 
 ## Extender (not active in production)
 
-- **The extender stack lands; the serving role is unproven in production** **[redeploy]** ([#289](https://github.com/full-bars/meso-miner/pull/289), [#290](https://github.com/full-bars/meso-miner/pull/290)). The extender v2 library, feed and gossip layer and pinned directory candidate are ported from 3.23-fix. The provider's serving-role wiring (`URNETWORK_EXTENDER`, forwards limited by `URNETWORK_EXTENDER_ALLOWED_HOSTS`) is opt-in. The serving role does not activate in production and has not been verified there. `provider/extender_role.go` says it does not implement activation, the directory, gossip or probes.
+- **The extender stack lands; the role does not activate yet** **[redeploy]** ([#289](https://github.com/full-bars/meso-miner/pull/289), [#290](https://github.com/full-bars/meso-miner/pull/290)). The extender v2 library, feed and gossip layer and pinned directory candidate are ported from 3.23-fix. The provider's serving-role wiring (`URNETWORK_EXTENDER`, forwards limited by `URNETWORK_EXTENDER_ALLOWED_HOSTS`) is opt-in and starts listeners only. No provider serves as an extender. `provider/extender_role.go` says it does not implement activation, the directory, gossip or probes.
 - **The TLS ClientHello is a runtime switch** **[redeploy]** ([#289](https://github.com/full-bars/meso-miner/pull/289)). `urnet-tools set tls-hello on|off` applies to new connections. It is off by default while it soaks.
 
 ## Docker and provider
