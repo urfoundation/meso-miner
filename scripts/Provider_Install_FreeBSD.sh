@@ -980,26 +980,35 @@ do_install() {
 
     priv mv -f "$staged_tool" "$install_path/bin/urnet-tools" || { pr_err "Failed to install urnet-tools"; exit 1; }
     staged_tool=""
-    priv mv -f "$staged" "$provider_bin" || { pr_err "Failed to install binary"; exit 1; }
-    staged_bin=""
-
-    # Same rename-not-follow rule as the binary above. A symlink planted at the
-    # version name would redirect the write, so stage beside it and rename over
-    # it: rename replaces the entry instead of following it.
-    ver_tmp="$install_path/.version.new.$$"
-    staged_version="$ver_tmp"
-    # Not fatal: the binary is already installed and the provider is about to
-    # start, so failing here would report a failed install for a working
-    # provider. The root-owned temp file still has to go with the failure, or
-    # every retry leaves .version.new.<pid> in the install tree.
-    if ! { printf '%s\n' "$tag" | priv tee "$ver_tmp" > /dev/null &&
-           priv mv -f "$ver_tmp" "$install_path/version"; }; then
-        priv_rm "$ver_tmp"
-        pr_warn "could not write %s; version keeps reporting the previous value" "$install_path/version"
+    # Back up the old provider only after the tree passed the permission gate.
+    provider_backup="$install_path/bin/.urnetwork.bak.$$"
+    had_old_binary=0
+    if [ -f "$provider_bin" ]; then
+        had_old_binary=1
+        _live_bin="$provider_bin"
+        if ! priv ln -f "$_live_bin" "$provider_backup" 2>/dev/null; then
+            if ! priv cp -p "$_live_bin" "$provider_backup" 2>/dev/null && \
+               ! priv cp "$_live_bin" "$provider_backup" 2>/dev/null; then
+                # Without a backup a failed start cannot roll back safely.
+                pr_err "Could not back up the current binary to %s; refusing to replace it" "$provider_backup"
+                priv_rm "$provider_backup"
+                priv_rm "$staged"
+                rm -rf "$tmpdir"
+                exit 1
+            fi
+        fi
     fi
-    staged_version=""
-    priv chmod 644 "$install_path/version" 2>/dev/null || true
 
+    priv mv -f "$staged" "$provider_bin" || {
+        pr_err "Failed to install binary"
+        priv_rm "$staged"
+        if [ "$had_old_binary" -eq 1 ] && [ ! -f "$provider_bin" ] && [ -f "$provider_backup" ]; then
+            priv mv -f "$provider_backup" "$provider_bin" 2>/dev/null || true
+        fi
+        rm -rf "$tmpdir"
+        exit 1
+    }
+    staged_bin=""
 
     if [ "$(id -u)" != "0" ]; then
         pr_info "Installing the rc.d service requires root; re-running that step with sudo..."
@@ -1030,13 +1039,46 @@ RCSCRIPT
     # only if it was already running, so a deliberately stopped provider is not
     # resurrected by an unattended `update` from cron. Failures are fatal —
     # reporting "installed" for a service that did not start is a false green.
+    service_ok=1
+    service_was_running=0
     if service_running; then
-        restart_service || { pr_err "Failed to restart the service after install"; exit 1; }
+        service_was_running=1
+        restart_service || { service_ok=0; pr_err "Failed to restart the service after install"; }
     elif [ "${UPDATING:-0}" != "1" ]; then
-        load_service || { pr_err "Failed to start the service"; exit 1; }
+        load_service || { service_ok=0; pr_err "Failed to start the service"; }
     else
         pr_info "Service is not running; leaving it stopped (run '%s start' when ready)" "$me"
     fi
+
+    if [ "$service_ok" -ne 1 ]; then
+        if [ "$had_old_binary" -eq 1 ] && [ -f "$provider_backup" ]; then
+            if ! priv mv -f "$provider_backup" "$provider_bin"; then
+                pr_err "Could not restore previous binary from %s; service restart was not attempted" "$provider_backup"
+            elif [ "$service_was_running" -eq 1 ]; then
+                if restart_service; then
+                    pr_warn "Restored previous binary and restarted the service; update did not apply"
+                else
+                    pr_err "Restored previous binary but failed to restart the service"
+                fi
+            else
+                pr_warn "Restored previous binary; service was not running before install and remains stopped"
+            fi
+        fi
+        rm -rf "$tmpdir"
+        exit 1
+    fi
+    [ "$had_old_binary" -eq 1 ] && priv rm -f "$provider_backup" 2>/dev/null || true
+
+    # Publish after a successful start; rename replaces a symlink rather than following it.
+    ver_tmp="$install_path/.version.new.$$"
+    staged_version="$ver_tmp"
+    if ! { printf '%s\n' "$tag" | priv tee "$ver_tmp" > /dev/null &&
+           priv mv -f "$ver_tmp" "$install_path/version"; }; then
+        priv_rm "$ver_tmp"
+        pr_warn "could not write %s; version keeps reporting the previous value" "$install_path/version"
+    fi
+    staged_version=""
+    priv chmod 644 "$install_path/version" 2>/dev/null || true
 
     # PATH hint goes into the SERVICE user's shell rc, once. Under sudo $HOME
     # is root's, and root's PATH never contains the service user's bin dir, so
