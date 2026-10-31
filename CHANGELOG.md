@@ -1,6 +1,6 @@
 ## [Unreleased]
 
-Everything merged after `v2026.10.22-1078667370-meso`.
+Everything merged after `v2026.10.24-1080497440-meso`.
 
 ### Added
 
