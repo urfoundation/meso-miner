@@ -2736,9 +2736,6 @@ do_install ()
         # bundled content that may lack the latest fix.
     fi
 
-    echo "$version_to_install" > "$install_path/.version"
-    echo "$release_date" > "$install_path/.date"
-
     if [ "$has_systemd" -eq 1 ]; then
         install_systemd_units
     fi
@@ -2746,6 +2743,9 @@ do_install ()
     if [ "$has_systemd" -eq 0 ] && [ "$has_openrc" -eq 1 ]; then
         install_openrc_units
     fi
+
+    echo "$version_to_install" > "$install_path/.version"
+    echo "$release_date" > "$install_path/.date"
 
     # The symlinks are not a shell-startup edit, so they are made regardless of
     # -B; the rc-file blocks honour it.

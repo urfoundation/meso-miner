@@ -2067,6 +2067,64 @@ func TestInstallerRefusesWhenProviderAssetAbsent(t *testing.T) {
 	}
 }
 
+// 8. The version marker is written only once the units are installed and the
+// service has started. A failed start leaves no marker, so a rollback never
+// leaves the file naming the release that did not run.
+func TestInstallerVersionMarkerOnlyAfterServiceStarts(t *testing.T) {
+	tarballContent := []byte("marker-ordering-tarball")
+	tag := "v2026.10.27"
+	sum := sha256.Sum256(tarballContent)
+	actualDigest := hex.EncodeToString(sum[:])
+
+	for _, tc := range []struct {
+		name      string
+		assetName string
+		run       func(*testing.T, installerHarnessOpts) installerHarnessResult
+	}{
+		{"FreeBSD", "urnetwork-provider-" + tag + "-freebsd-amd64.tar.gz", runFreeBSDInstaller},
+		{"Linux", "urnetwork-provider-" + tag + ".tar.gz", runLinuxInstaller},
+	} {
+		releaseJSON := fmt.Sprintf(`{
+		"tag_name": %q,
+		"published_at": "2026-10-27T00:00:00Z",
+		"assets": [
+			{"name": %q, "digest": "sha256:%s"}
+		]
+	}`, tag, tc.assetName, actualDigest)
+
+		t.Run(tc.name+"/started", func(t *testing.T) {
+			res := tc.run(t, installerHarnessOpts{
+				tag:         tag,
+				releaseJSON: releaseJSON,
+				tarballData: tarballContent,
+			})
+			if res.exitCode != 0 {
+				t.Fatalf("expected install to succeed, got exit %d (out:\n%s)", res.exitCode, res.stdout)
+			}
+			if !res.versionWritten {
+				t.Fatalf("version marker not written after a successful start (out:\n%s)", res.stdout)
+			}
+			if !strings.Contains(res.versionMarker, "2026.10.27") {
+				t.Errorf("version marker %q does not name the installed release", res.versionMarker)
+			}
+		})
+		t.Run(tc.name+"/start_fails", func(t *testing.T) {
+			res := tc.run(t, installerHarnessOpts{
+				tag:         tag,
+				releaseJSON: releaseJSON,
+				tarballData: tarballContent,
+				failRestart: true,
+			})
+			if res.exitCode == 0 {
+				t.Fatalf("expected install to fail when the service does not start, got exit 0 (out:\n%s)", res.stdout)
+			}
+			if res.versionWritten {
+				t.Errorf("version marker written (%q) for a release whose service did not start", res.versionMarker)
+			}
+		})
+	}
+}
+
 // A backup that cannot be made must stop the update before the live binary is
 // replaced. Without a backup a failed start has nothing to roll back to.
 func TestInstallerBackupFailurePreservesLiveBinary(t *testing.T) {
