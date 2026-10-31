@@ -4,7 +4,7 @@ This document tracks all modifications made to the upstream URNetwork v3.23 code
 
 **Fork Based On**: urnetwork/connect v3.23  
 **Repository**: github.com/urfoundation/meso-miner  
-**Current Version**: v2026.10.19-1075696970-meso
+**Current Version**: v2026.10.24-1080497440-meso
 
 ---
 
@@ -3748,3 +3748,44 @@ Parity port of the `fragment+segment` dialer from `urfoundation/meso-miner` (PR 
 - **CFAA blocklist refresh**: IPv4 41,425 → 41,202, IPv6 548 → 593, across two upstream syncs. Data-only.
 
 **Impact**: operators see the counters continue across a restart, a node that updates carries the certificate block, and a script that still calls a retired report command now fails. Nothing else changes provider traffic behaviour.
+
+## 179. v2026.10.22: Docker Stop Forwarding, Handshake Metrics and CFAA Sync
+
+**Window**: `v2026.10.21-1077734740-meso` (`9623630e`) to `v2026.10.22-1078667370-meso` (`f5b50729`). Merges from full-bars PRs 253 and 258 to 265, and urfoundation PRs #12 to #28.
+
+**Purpose**: Make `docker stop` reach the provider, expose the handshake stages and negotiated curves, keep proxy-exit counters from stepping back, and keep the blocklist tables in step with the CFAA source.
+
+**Files Modified**: the Docker start, update and verify scripts under `docker/scripts/`, `pqe_tracker.go`, `provider/main.go`, `provider/metrics_provider.go`, `transfer_encrypt.go`, `monitoring/grafana/dashboards/urnetwork-providers.json`, `.github/workflows/cfaa-blocklist-sync.yml` and `.github/scripts/cfaa_sync.sh`.
+
+**Change**:
+- **Container stop reaches the provider** (full-bars PR 258, urfoundation #16): the start scripts trap `TERM` and `INT` and forward them, and the provider runs in the background so the trap can fire. The shell that runs as PID 1 has no default SIGTERM action, so before this change Docker sent SIGKILL at the grace timeout.
+- **The updater picks this architecture's asset first** (full-bars PR 258, urfoundation #17): the update path matches the container's architecture before it chooses a provider asset.
+- **Handshake stages and curves** (full-bars PRs 259 and 261, urfoundation #12 to #14): the PQE tracker counts attempts, TLS completions, verified sessions and identity failures, with a per-curve histogram. `/metrics` exports `urnet_sessions_handshake_total{stage=...}` and `urnet_sessions_curve_total{curve=...}`, and the dashboard carries both rates.
+- **Proxy-exit counters stay monotonic** (full-bars PR 261, urfoundation #14): a proxy's counts fold into a provider-wide accumulator before its manager is dropped, so a `_total` does not decrease when a proxy exits.
+- **Deny-list drift guard** (full-bars PR 263): the guard matches the deny-list as a fixed string, so a reintroduced inline list in another spelling fails.
+- **CFAA sync covers both tables** (full-bars PRs 262 and 265): the scheduled job syncs the IP blocker table and the CFAA prefixes, and a check fails on drift.
+- **Bittensor and stage documentation** (full-bars PRs 253 and 260, urfoundation #15, #22 and #23).
+
+**Impact**: operators see `docker stop` end with the provider's own exit, and the handshake breakdown on `/metrics` and the dashboard.
+
+## 180. v2026.10.24: Extender v2 Library Port (Serving Role Unproven), Trim Status and Lifetime Start Dates
+
+**Window**: `v2026.10.22-1078667370-meso` (`f5b50729`) to `v2026.10.24-1080497440-meso` (`d43ca1ff`). Merges from urfoundation PRs #21 and #29 to #55, including the 3.23-fix extender port as urfoundation #39. Full-bars changes merged after this tag (full-bars PRs 267 to 307 and later) are not in this window; they are listed under `CHANGELOG.md` `[Unreleased]`.
+
+**Purpose**: Port the 3.23-fix extender v2 library, with its gossip, fingerprint and record support, show the proxy trim cap in status, date the lifetime counters, and fix the operator-facing defects in this line's installer, warm-up, thrash-exit, OOM-cap, disk-benchmark, PSI and Windows hotkey-write paths.
+
+**Files Modified**: `extender/` (the serving library), `gossip/`, `fingerprint/`, `extenderrole/role.go`, `extender_record.go`, `provider/extender_role.go`, `internal/urnettools/proxy_trim_status.go`, `internal/durablesync/`, `hotkeywallet/store.go`, `api_control_result.go`, `api_wallet_mapping.go`, `api_auth_observation.go`, `go.mod`, `LOG_REFERENCE.md`, `docs/Configuration.md`, `docs/Troubleshooting.md` and `docs/Proxy-Management.md`.
+
+**Change**:
+- **Extender v2 library ported** (urfoundation #39, with review follow-ups #40 to #43): the library in `extender/`, the feed and gossip layer in `gossip/`, signed records in `extender_record.go` and `extenderrole/`, and the ClientHello and QUIC Initial drift harness in `fingerprint/` come from 3.23-fix.
+- **The serving role is wiring, not a verified service**: `provider/extender_role.go` is opt-in with `URNETWORK_EXTENDER` and forwards are limited to `URNETWORK_EXTENDER_ALLOWED_HOSTS`. The role is not verified in production and does not activate in production. The file header says it does not implement activation, the directory, gossip or probes.
+- **Switchable Chrome ClientHello** (urfoundation #39): `urnet-tools set tls-hello on|off` applies to new connections, and the default is off.
+- **Proxy trim cap in status** (urfoundation #33 and #35): `urnet-tools proxy trim` with no count reports the cap, its source and the proxies it holds back, and `urnet-tools status` carries a `trim` row.
+- **Lifetime counters are dated** (urfoundation #36 and #38): the store persists a `since` stamp once, and `/metrics` exports `urnet_lifetime_start_timestamp_seconds` and `urnet_lifetime_start_approximate`.
+- **Warm-up hold bounded** (urfoundation #37): the URL warm-up hold ends five minutes after process start.
+- **Disk benchmark samples by time** (urfoundation #51 and #53): the cache entry records its sampling shape, so an older entry is not reused.
+- **OOM-cap state write is reported** (urfoundation #52 and #54), and a thrash exit 75 is marked as planned (urfoundation #49).
+- **PSI and Windows hotkey writes** (urfoundation #44 and #45): the memory PSI resource is read, and the directory flush goes through `internal/durablesync`.
+- **Installer hardening and CI** (urfoundation #46 to #48 and #50): a symlinked shell rc is refused, path changes are checked before writing, and the shell-rc symlink test runs in CI.
+
+**Impact**: the serving role remains unverified in production, so it should not be treated as a working service. The other changes in this window are operator-visible in status, metrics and the installer.
