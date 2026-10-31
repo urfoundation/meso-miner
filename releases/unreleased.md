@@ -13,7 +13,7 @@ Legend: **[redeploy]** needs the built artifact redeployed. **[installer]** need
 
 ## Docker and provider
 
-- **Docker startup keeps the saved proxy config when an import fails** **[redeploy]** (2326c8c8, ff69bf59, 6f1d7687, a4e57efe, 56104b33). Staged imports stay away from live state. Corrupt saved state is kept for recovery and no longer blocks startup. Startup stops only when no usable config is saved.
+- **Docker startup keeps the saved proxy config when an import fails** **[redeploy]** (2326c8c8, ff69bf59, 6f1d7687, a4e57efe, 56104b33, 2567b218). The echoed address is trimmed before redaction matching, and the staging sweep spares a live directory. Staged imports stay away from live state. Corrupt saved state is kept for recovery and no longer blocks startup. Startup stops only when no usable config is saved.
 - **Docker debug logs redact credentials; nightly starts reuse the stored JWT** **[redeploy]** (32489225, 1662af74, c5aa058a, 47785a9b, b92662ab).
 - **Provider proxy state changes hold the proxy lock** **[redeploy]** (5a93487d, 1510520d, d01c7df6, 921b9999). An unreadable `proxy.state` is reported, not masked, and a file proxy add keeps the source file's owner and mode.
 - **Provider logs redact malformed addresses and raw keys** **[redeploy]** (1e915804).
@@ -55,3 +55,19 @@ Legend: **[redeploy]** needs the built artifact redeployed. **[installer]** need
 1. Nodes on `h3 all`, a count or `auto` get the proxied-H3 budget change. Nodes on the default `h3 direct` are not affected by it.
 2. `smart_dialer` is restart-required. `set smart_dialer on` takes effect at the next start.
 3. The extender role and the Chrome ClientHello are both off unless set.
+
+## What's Changed
+
+- Keep the URL fetch failure reason in the important log (#56)
+- Sync the full-bars main line into urfoundation (#57)
+- Port the sn release proxy, redaction and sync fixes (#58)
+- Keep the saved Docker proxy config when an import fails, and redact the auth echo (#59)
+- Prepare the changelog and pages for the next tag (#60)
+- Remove the workstation flag from `urnet-tools` (#61)
+- Port the reconciled parity set: installers, FreeBSD lifecycle, network command and CI (#62)
+- Port the remaining installer, darwin update, Docker auth and gossip test fixes (#63)
+- Sync the upstream blocklists with the siblings (8004c71f): data only
+- Separate the proxy tag from the contract verb in connect (8bc5672e)
+- Windows proxy paste: TERM fallback kept for Windows only, prompt shown in a Windows PTY, end-of-input key explained (4ffe8a4a, 746392a3, 18360613, eaaf3875)
+
+**Full Changelog**: <https://github.com/urfoundation/meso-miner/compare/v2026.10.24-1080497440-meso...4506731cd>
