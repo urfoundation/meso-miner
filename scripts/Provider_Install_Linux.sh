@@ -325,6 +325,22 @@ except (json.JSONDecodeError, KeyError):
     echo "$digest" | sed 's/^sha256://'
 }
 
+# Return success only when the release listing contains the named asset.
+release_lists_asset ()
+{
+    [ -n "$1" ] || return 1
+    if command -v jq > /dev/null 2>&1; then
+        printf '%s' "$1" | jq -e --arg a "$2" 'any(.assets[]?; .name == $a)' >/dev/null 2>&1
+    elif command -v python3 > /dev/null 2>&1; then
+        printf '%s' "$1" | python3 -c 'import sys,json
+try:
+ d=json.load(sys.stdin); sys.exit(0 if any(a.get("name")==sys.argv[1] for a in d.get("assets",[])) else 1)
+except Exception: sys.exit(1)' "$2" >/dev/null 2>&1
+    else
+        return 1
+    fi
+}
+
 # install_downloader makes sure curl or wget exists, preferring curl (better
 # progress output, timeouts and retry semantics that BusyBox wget lacks).
 # A minimal host may ship neither — Alpine's busybox provides wget, but a slim
@@ -536,6 +552,24 @@ install_json_parser ()
 
 # verify_sha256_file checks a file's sha256 against the expected hex digest.
 # Returns 0 on match, 1 on mismatch/missing tools.
+# compute_sha256_file prints a file's sha256 (hex); fails when no hashing tool exists.
+compute_sha256_file ()
+{
+    file="$1"
+    if [ ! -f "$file" ]; then
+        return 1
+    fi
+    if command -v sha256sum > /dev/null 2>&1; then
+        sha256sum "$file" | awk '{print $1}'
+    elif command -v sha256 > /dev/null 2>&1; then
+        sha256 -q "$file"
+    elif command -v openssl > /dev/null 2>&1; then
+        openssl dgst -sha256 "$file" | awk '{print $NF}'
+    else
+        return 1
+    fi
+}
+
 verify_sha256_file ()
 {
     file="$1"
@@ -543,11 +577,8 @@ verify_sha256_file ()
     if [ -z "$expected" ] || [ ! -f "$file" ]; then
         return 1
     fi
-    if command -v sha256sum > /dev/null; then
-        actual="$(sha256sum "$file" | awk '{print $1}')"
-    elif command -v openssl > /dev/null; then
-        actual="$(openssl dgst -sha256 "$file" | awk '{print $2}')"
-    else
+    actual="$(compute_sha256_file "$file")"
+    if [ -z "$actual" ]; then
         pr_err "Neither sha256sum nor openssl is available; cannot verify downloaded tool"
         return 1
     fi
@@ -2437,7 +2468,28 @@ do_install ()
     fi
     dl_url="$urnet_dl_base/releases/download/$tag/urnetwork-provider-$tag.tar.gz"
     mirror_url="$urnet_github_dl_base/$tag/urnetwork-provider-$tag.tar.gz"
+    provider_asset="urnetwork-provider-$tag.tar.gz"
     
+    # The release listing is required even when the asset has no digest.
+    if ! command -v jq >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then
+        pr_err "Neither jq nor python3 is installed; cannot read release metadata for %s (%s). Refusing to install. Install jq or python3 and retry." "$tag" "$provider_asset"
+        exit 1
+    fi
+    release_json="${release_json:-${release:-}}"
+    if ! release_lists_asset "$release_json" "$provider_asset"; then
+        release_json_tag="$(network_fetch "$api_base/releases/tags/$tag" 2>/dev/null || true)"
+        release_lists_asset "$release_json_tag" "$provider_asset" && release_json="$release_json_tag"
+    fi
+    if ! release_lists_asset "$release_json" "$provider_asset"; then
+        if [ -z "$release_json" ]; then
+            pr_err "Could not fetch release metadata for %s to verify asset %s (GitHub API unreachable or rate-limited); refusing to install." "$tag" "$provider_asset"
+        else
+            pr_err "Release metadata for %s does not list asset %s; refusing to install." "$tag" "$provider_asset"
+        fi
+        exit 1
+    fi
+    provider_digest="$(get_asset_digest_from_api_response "$release_json" "$provider_asset")"
+
     pr_info "Downloading: %s" "$dl_url"
     
     if ! workdir="$(mktemp -d)"; then
@@ -2461,6 +2513,17 @@ do_install ()
                 pr_err "Failed to download from both primary and mirror"
                 exit 1
             fi
+        fi
+
+        if [ -n "$provider_digest" ]; then
+            if ! verify_sha256_file "$tarball" "$provider_digest"; then
+                actual="$(compute_sha256_file "$tarball")"
+                pr_err "SHA-256 digest mismatch for provider asset '%s': expected %s, got %s" "$provider_asset" "$provider_digest" "${actual:-<unknown>}"
+                exit 1
+            fi
+            pr_info "Provider asset sha256 verified (%s)" "$provider_asset"
+        else
+            pr_warn "Release %s has no sha256 digest for '%s'; continuing without verification" "$tag" "$provider_asset"
         fi
 
         if ! tar -xf "$tarball" 2>/dev/null; then

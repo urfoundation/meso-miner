@@ -1642,6 +1642,166 @@ do_install
 	}
 }
 
+// 1. A provider tarball whose digest does not match: the install aborts before
+// extraction and the error names the asset and digests.
+func TestInstallerProviderTarballDigestMismatchAborts(t *testing.T) {
+	tarballContent := []byte("actual-tarball-payload-bytes")
+	sum := sha256.Sum256(tarballContent)
+	actualDigest := hex.EncodeToString(sum[:])
+	expectedDigest := strings.Repeat("d", 64)
+
+	tag := "v2026.10.27"
+
+	for _, tc := range []struct {
+		name      string
+		assetName string
+		run       func(*testing.T, installerHarnessOpts) installerHarnessResult
+	}{
+		{"FreeBSD", "urnetwork-provider-" + tag + "-freebsd-amd64.tar.gz", runFreeBSDInstaller},
+		{"Linux", "urnetwork-provider-" + tag + ".tar.gz", runLinuxInstaller},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			releaseJSON := fmt.Sprintf(`{
+		"tag_name": %q,
+		"published_at": "2026-10-27T00:00:00Z",
+		"assets": [
+			{"name": %q, "digest": "sha256:%s"}
+		]
+	}`, tag, tc.assetName, expectedDigest)
+			res := tc.run(t, installerHarnessOpts{
+				tag:         tag,
+				releaseJSON: releaseJSON,
+				tarballData: tarballContent,
+			})
+			if res.exitCode == 0 {
+				t.Fatalf("expected install to abort on digest mismatch, got exit 0 (out:\n%s)", res.stdout)
+			}
+			if len(res.tarCalls) != 0 {
+				t.Fatalf("tar was invoked (%v); must abort before extraction", res.tarCalls)
+			}
+			combinedOut := res.stdout + "\n" + res.stderr
+			if !strings.Contains(combinedOut, tc.assetName) {
+				t.Errorf("error output missing asset name %q:\n%s", tc.assetName, combinedOut)
+			}
+			if !strings.Contains(combinedOut, expectedDigest) {
+				t.Errorf("error output missing expected digest %q:\n%s", expectedDigest, combinedOut)
+			}
+			if !strings.Contains(combinedOut, actualDigest) {
+				t.Errorf("error output missing actual digest %q:\n%s", actualDigest, combinedOut)
+			}
+		})
+	}
+}
+
+// 2. A matching digest: extraction proceeds.
+func TestInstallerProviderTarballDigestMatchProceeds(t *testing.T) {
+	tarballContent := []byte("valid-matching-tarball-bytes")
+	sum := sha256.Sum256(tarballContent)
+	actualDigest := hex.EncodeToString(sum[:])
+
+	tag := "v2026.10.27"
+
+	for _, tc := range []struct {
+		name      string
+		assetName string
+		run       func(*testing.T, installerHarnessOpts) installerHarnessResult
+	}{
+		{"FreeBSD", "urnetwork-provider-" + tag + "-freebsd-amd64.tar.gz", runFreeBSDInstaller},
+		{"Linux", "urnetwork-provider-" + tag + ".tar.gz", runLinuxInstaller},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			releaseJSON := fmt.Sprintf(`{
+		"tag_name": %q,
+		"published_at": "2026-10-27T00:00:00Z",
+		"assets": [
+			{"name": %q, "digest": "sha256:%s"}
+		]
+	}`, tag, tc.assetName, actualDigest)
+			res := tc.run(t, installerHarnessOpts{
+				tag:         tag,
+				releaseJSON: releaseJSON,
+				tarballData: tarballContent,
+			})
+			if res.exitCode != 0 {
+				t.Fatalf("expected matching digest install to succeed, got exit %d (out:\n%s)", res.exitCode, res.stdout)
+			}
+			if len(res.tarCalls) == 0 {
+				t.Fatal("expected tar extraction to proceed, but tar was never invoked")
+			}
+			if strings.Contains(res.stdout+res.stderr, "mismatch") {
+				t.Errorf("unexpected mismatch message in output:\n%s", res.stdout)
+			}
+		})
+	}
+}
+
+// 3. A release with no provider digest. FreeBSD refuses before extraction: an
+// asset whose digest cannot be established is never installed, whichever JSON
+// parser the host has. Linux still warns once and proceeds.
+func TestInstallerProviderTarballNoDigestPolicy(t *testing.T) {
+	tarballContent := []byte("tarball-without-release-digest")
+	tag := "v2026.10.27"
+
+	for _, tc := range []struct {
+		name      string
+		assetName string
+		run       func(*testing.T, installerHarnessOpts) installerHarnessResult
+		refuses   bool
+	}{
+		{"FreeBSD", "urnetwork-provider-" + tag + "-freebsd-amd64.tar.gz", runFreeBSDInstaller, true},
+		{"Linux", "urnetwork-provider-" + tag + ".tar.gz", runLinuxInstaller, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			releaseJSON := fmt.Sprintf(`{
+		"tag_name": %q,
+		"published_at": "2026-10-27T00:00:00Z",
+		"assets": [
+			{"name": %q}
+		]
+	}`, tag, tc.assetName)
+			res := tc.run(t, installerHarnessOpts{
+				tag:         tag,
+				releaseJSON: releaseJSON,
+				tarballData: tarballContent,
+			})
+			if tc.refuses {
+				out := res.stdout + "\n" + res.stderr
+				if res.exitCode == 0 || len(res.tarCalls) != 0 {
+					t.Fatalf("FreeBSD installed a provider with no digest (exit %d, tar %v):\n%s", res.exitCode, res.tarCalls, out)
+				}
+				if strings.Contains(out, "continuing without verification") || strings.Contains(out, "mismatch") {
+					t.Errorf("refusal must say the digest is missing, not warn or report a mismatch:\n%s", out)
+				}
+				if !strings.Contains(out, tc.assetName) || !strings.Contains(out, "refusing") {
+					t.Errorf("refusal does not name %q and say it is refusing:\n%s", tc.assetName, out)
+				}
+				return
+			}
+			if res.exitCode != 0 {
+				t.Fatalf("expected missing digest install to proceed, got exit %d (out:\n%s)", res.exitCode, res.stdout)
+			}
+			if len(res.tarCalls) == 0 {
+				t.Fatal("expected tar extraction to proceed for undigested release")
+			}
+			combinedOut := res.stdout + "\n" + res.stderr
+			if strings.Contains(combinedOut, "mismatch") {
+				t.Errorf("missing digest must not be treated as a mismatch:\n%s", combinedOut)
+			}
+			// stdout and stderr are the same combined stream in the harness,
+			// so count the warnings in one of them only.
+			providerWarns := 0
+			for _, line := range strings.Split(res.stdout, "\n") {
+				if strings.Contains(line, "[WARN]") && strings.Contains(line, tc.assetName) {
+					providerWarns++
+				}
+			}
+			if providerWarns != 1 {
+				t.Errorf("expected exactly one warning naming unverified asset %q, got %d:\n%s", tc.assetName, providerWarns, res.stdout)
+			}
+		})
+	}
+}
+
 // A release that publishes no digest for the provider is refused before
 // extraction on a host with no jq or python3, exactly as with a parser: the
 // base-system scanner reads the metadata, finds no digest, and the installer
@@ -1743,5 +1903,61 @@ func assertInstallRefused(t *testing.T, res installerHarnessResult, tag, assetNa
 		if !strings.Contains(combined, want) {
 			t.Errorf("refusal output missing %q:\n%s", want, combined)
 		}
+	}
+}
+
+// 6. Release metadata unavailable (API unreachable or rate-limited, empty body,
+// no tag fallback): the installer refuses before download and extraction. An
+// unreadable release used to leave the digest empty and install unverified.
+func TestInstallerRefusesWithoutReleaseMetadata(t *testing.T) {
+	tag := "v2026.10.27"
+
+	for _, tc := range []struct {
+		name      string
+		assetName string
+		run       func(*testing.T, installerHarnessOpts) installerHarnessResult
+	}{
+		{"FreeBSD", "urnetwork-provider-" + tag + "-freebsd-amd64.tar.gz", runFreeBSDInstaller},
+		{"Linux", "urnetwork-provider-" + tag + ".tar.gz", runLinuxInstaller},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := tc.run(t, installerHarnessOpts{
+				tag:         tag,
+				releaseJSON: "",
+				tarballData: []byte("tarball-with-no-verifiable-release"),
+			})
+			assertInstallRefused(t, res, tag, tc.assetName)
+		})
+	}
+}
+
+// 7. Release metadata readable but the named provider asset absent (an error
+// body or a release without the tarball): refuse, naming the asset.
+func TestInstallerRefusesWhenProviderAssetAbsent(t *testing.T) {
+	tag := "v2026.10.27"
+
+	for _, tc := range []struct {
+		name      string
+		assetName string
+		run       func(*testing.T, installerHarnessOpts) installerHarnessResult
+	}{
+		{"FreeBSD", "urnetwork-provider-" + tag + "-freebsd-amd64.tar.gz", runFreeBSDInstaller},
+		{"Linux", "urnetwork-provider-" + tag + ".tar.gz", runLinuxInstaller},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			releaseJSON := fmt.Sprintf(`{
+		"tag_name": %q,
+		"published_at": "2026-10-27T00:00:00Z",
+		"assets": [
+			{"name": "urnet-tools-unrelated.tar.gz", "digest": "sha256:%s"}
+		]
+	}`, tag, strings.Repeat("e", 64))
+			res := tc.run(t, installerHarnessOpts{
+				tag:         tag,
+				releaseJSON: releaseJSON,
+				tarballData: []byte("tarball-absent-from-release"),
+			})
+			assertInstallRefused(t, res, tag, tc.assetName)
+		})
 	}
 }
