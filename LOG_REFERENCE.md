@@ -908,8 +908,8 @@ Using 1000 proxy servers:
 - Each `added server` line confirms a proxy was registered successfully
 - Credentials are partially redacted in logs (`***`)
 - `Using N proxy servers:` summarizes the loaded pool with index assignments
-- Without `/app/proxy.txt`, startup logs `[INFO] No proxy.txt found; skipping proxy`.
-- The current startup script removes `~/.urnetwork/proxy` before checking for `/app/proxy.txt`; with no mounted file, it clears the saved file-proxy configuration.
+- Without `/app/proxy.txt`, startup logs `[INFO] No proxy.txt found; kept existing proxy configuration` when a saved config exists, or `[INFO] No proxy.txt found; none configured` when none does.
+- Without `/app/proxy.txt`, the startup script keeps the saved `~/.urnetwork/proxy` configuration. It only removes stale `.proxy-import.*` staging directories older than ten minutes.
 
 ### Public IP checker and password-login debug output
 
@@ -924,7 +924,7 @@ Using 1000 proxy servers:
 
 The success or warning reports the `curl | sh` pipeline result. It does not separately prove that the download succeeded.
 
-When `DEBUG=true`, the password-login path prints `DEBUG: USER_AUTH=`, `DEBUG: PASSWORD=`, `DEBUG: AUTH_EXIT_CODE=` and `DEBUG: AUTH_OUTPUT=` followed by their values. The first two contain the credentials. Treat the output line as sensitive too, and do not share these logs.
+When `DEBUG=true`, the password-login path prints `DEBUG: USER_AUTH set=` and `DEBUG: PASSWORD set=`, each with its length, then `DEBUG: AUTH_EXIT_CODE=` and `DEBUG: AUTH_OUTPUT=`. The credential values are not printed. `DEBUG: AUTH_OUTPUT=[redacted]` replaces the output when it echoes a credential. The lengths still reveal something about the credentials, so do not share these logs unedited.
 
 ### `proxy.state` reconciliation
 

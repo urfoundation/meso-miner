@@ -60,11 +60,11 @@ All examples below mount a config volume at `/root/.urnetwork`. Stable and JWT m
 
 ## 🚦 Startup Checks and Debug Output
 
-**Proxy loading checks `/app/proxy.txt`.** Startup logs `[INFO] Checking proxy configuration`, then either `[INFO] proxy.txt found; adding proxy` or `[INFO] No proxy.txt found; skipping proxy`.
+**Proxy loading checks `/app/proxy.txt`.** Startup logs `[INFO] Checking proxy configuration`, then either `[INFO] proxy.txt found; adding proxy` or, when no `/app/proxy.txt` is mounted, `[INFO] No proxy.txt found; kept existing proxy configuration` (a saved config exists) or `[INFO] No proxy.txt found; none configured` (none is saved).
 
-The current startup script removes `~/.urnetwork/proxy` before checking for the mounted file. Without `/app/proxy.txt`, the saved file-proxy configuration is cleared rather than kept. Mount a current proxy list at `/app/proxy.txt` when using file-based proxies.
+Without `/app/proxy.txt`, the startup script keeps the saved `~/.urnetwork/proxy` configuration. It only removes stale `.proxy-import.*` staging directories older than ten minutes. Mount a current proxy list at `/app/proxy.txt` when using file-based proxies.
 
-**Do not use `DEBUG=true` with real login credentials.** The password-login path prints `USER_AUTH`, `PASSWORD` and `AUTH_OUTPUT` to the container log. The current startup script does not redact those values.
+**Take care with `DEBUG=true`.** The password-login path prints whether `USER_AUTH` and `PASSWORD` are set and their lengths, plus the auth exit code and auth output. It does not print the credential values, and the auth output line is replaced with `[redacted]` when it echoes one. Debug logs still record the credential lengths, so do not share them unedited.
 
 **The IP checker reports the shell pipeline result.** With `ENABLE_IP_CHECKER=true`, the startup script runs the external checker and logs:
 
