@@ -1884,6 +1884,65 @@ func baseToolsPath(t *testing.T) string {
 	return dir
 }
 
+// 4. An interrupted replacement (stub mv/cp to fail at the right moment)
+// leaves the configured ExecPath present or restores the backup — never absent.
+func TestInstallerInterruptedReplacementLeavesBinaryIntact(t *testing.T) {
+	existingPayload := "pre-existing-working-binary"
+	tarballContent := []byte("new-tarball-payload")
+	tag := "v2026.10.27"
+	sum := sha256.Sum256(tarballContent)
+	actualDigest := hex.EncodeToString(sum[:])
+
+	for _, tc := range []struct {
+		name      string
+		assetName string
+		run       func(*testing.T, installerHarnessOpts) installerHarnessResult
+	}{
+		{"FreeBSD", "urnetwork-provider-" + tag + "-freebsd-amd64.tar.gz", runFreeBSDInstaller},
+		{"Linux", "urnetwork-provider-" + tag + ".tar.gz", runLinuxInstaller},
+	} {
+		releaseJSON := fmt.Sprintf(`{
+		"tag_name": %q,
+		"published_at": "2026-10-27T00:00:00Z",
+		"assets": [
+			{"name": %q, "digest": "sha256:%s"}
+		]
+	}`, tag, tc.assetName, actualDigest)
+		t.Run(tc.name+"/cp_failure", func(t *testing.T) {
+			res := tc.run(t, installerHarnessOpts{
+				tag:         tag,
+				operation:   "update",
+				releaseJSON: releaseJSON,
+				tarballData: tarballContent,
+				existingBin: existingPayload,
+				failCpToDst: true,
+			})
+			if res.finalBin == "" {
+				t.Fatalf("interrupted replacement left executable absent! out:\n%s", res.stdout)
+			}
+			if res.finalBin != existingPayload {
+				t.Errorf("interrupted replacement changed binary, want %q, got %q", existingPayload, res.finalBin)
+			}
+		})
+		t.Run(tc.name+"/mv_failure", func(t *testing.T) {
+			res := tc.run(t, installerHarnessOpts{
+				tag:         tag,
+				operation:   "update",
+				releaseJSON: releaseJSON,
+				tarballData: tarballContent,
+				existingBin: existingPayload,
+				failMv:      true,
+			})
+			if res.finalBin == "" {
+				t.Fatalf("interrupted replacement left executable absent! out:\n%s", res.stdout)
+			}
+			if res.finalBin != existingPayload {
+				t.Errorf("interrupted replacement changed binary, want %q, got %q", existingPayload, res.finalBin)
+			}
+		})
+	}
+}
+
 // assertInstallRefused checks the fail-closed contract shared by both
 // installers: a non-zero exit, no tarball extraction, and an error that names
 // the tag and the provider asset it could not verify.
@@ -1958,6 +2017,30 @@ func TestInstallerRefusesWhenProviderAssetAbsent(t *testing.T) {
 				tarballData: []byte("tarball-absent-from-release"),
 			})
 			assertInstallRefused(t, res, tag, tc.assetName)
+		})
+	}
+}
+
+// A backup that cannot be made must stop the update before the live binary is
+// replaced. Without a backup a failed start has nothing to roll back to.
+func TestInstallerBackupFailurePreservesLiveBinary(t *testing.T) {
+	const tag = "v2026.10.27"
+	const old = "pre-existing-working-binary"
+	sum := sha256.Sum256([]byte("payload"))
+	for _, tc := range []struct {
+		name  string
+		asset string
+		run   func(*testing.T, installerHarnessOpts) installerHarnessResult
+	}{
+		{"FreeBSD", "urnetwork-provider-" + tag + "-freebsd-amd64.tar.gz", runFreeBSDInstaller},
+		{"Linux", "urnetwork-provider-" + tag + ".tar.gz", runLinuxInstaller},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			release := fmt.Sprintf(`{"tag_name":%q,"assets":[{"name":%q,"digest":"sha256:%x"}]}`, tag, tc.asset, sum)
+			res := tc.run(t, installerHarnessOpts{tag: tag, operation: "update", releaseJSON: release, tarballData: []byte("payload"), existingBin: old, failBackup: true})
+			if res.exitCode == 0 || res.finalBin != old || !strings.Contains(res.stdout, "Could not back up") {
+				t.Fatalf("backup failure did not abort before replacing live binary: exit=%d binary=%q output=%s", res.exitCode, res.finalBin, res.stdout)
+			}
 		})
 	}
 }

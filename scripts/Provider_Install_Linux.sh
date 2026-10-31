@@ -2567,11 +2567,40 @@ do_install ()
     fi
 
     if [ -z "$URNETWORK_NO_DOWNLOAD_TARBALL" ]; then
-        # Bypass 'Text file busy' locks on running binaries by moving the active inode out of the way first
-        mv -f "$install_path/bin/urnetwork" "$install_path/bin/urnetwork.old" 2>/dev/null || true
-        cp "$bin_program" "$install_path/bin/urnetwork" || { pr_err "Failed to install provider binary"; exit 1; }
-        chmod 755 "$install_path/bin/urnetwork" || { pr_err "Failed to install provider binary"; exit 1; }
-        rm -f "$install_path/bin/urnetwork.old" 2>/dev/null || true
+        staged_bin="$install_path/bin/.urnetwork.new.$$"
+        if ! ${SUDO:-} cp "$bin_program" "$staged_bin"; then
+            pr_err "Failed to stage provider binary"
+            ${SUDO:-} rm -f "$staged_bin" 2>/dev/null || true
+            exit 1
+        fi
+        if ! ${SUDO:-} chmod 755 "$staged_bin"; then
+            pr_err "Failed to chmod staged provider binary"
+            ${SUDO:-} rm -f "$staged_bin" 2>/dev/null || true
+            exit 1
+        fi
+
+        provider_swap_pending=0
+        if [ -f "$install_path/bin/urnetwork" ]; then
+            if ${SUDO:-} cp -p "$install_path/bin/urnetwork" "$install_path/bin/urnetwork.old" 2>/dev/null || \
+               ${SUDO:-} cp "$install_path/bin/urnetwork" "$install_path/bin/urnetwork.old" 2>/dev/null; then
+                provider_swap_pending=1
+            else
+                # No backup means a failed start could not be rolled back, so
+                # the live binary is left untouched.
+                pr_err "Could not back up the current binary to %s; refusing to replace it" "$install_path/bin/urnetwork.old"
+                ${SUDO:-} rm -f "$install_path/bin/urnetwork.old" "$staged_bin" 2>/dev/null || true
+                exit 1
+            fi
+        fi
+
+        if ! ${SUDO:-} mv -f "$staged_bin" "$install_path/bin/urnetwork"; then
+            pr_err "Failed to install provider binary"
+            ${SUDO:-} rm -f "$staged_bin" 2>/dev/null || true
+            if [ "$provider_swap_pending" -eq 1 ] && [ ! -f "$install_path/bin/urnetwork" ] && [ -f "$install_path/bin/urnetwork.old" ]; then
+                ${SUDO:-} mv -f "$install_path/bin/urnetwork.old" "$install_path/bin/urnetwork" 2>/dev/null || true
+            fi
+            exit 1
+        fi
     fi
 
     cd "$script_rundir" || exit 1
