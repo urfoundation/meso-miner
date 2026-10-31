@@ -1943,6 +1943,52 @@ func TestInstallerInterruptedReplacementLeavesBinaryIntact(t *testing.T) {
 	}
 }
 
+// 5. A failed restart after install restores the previous binary.
+func TestInstallerFailedRestartRestoresBackup(t *testing.T) {
+	existingPayload := "pre-existing-working-binary"
+	tarballContent := []byte("new-tarball-payload")
+	tag := "v2026.10.27"
+	sum := sha256.Sum256(tarballContent)
+	actualDigest := hex.EncodeToString(sum[:])
+
+	for _, tc := range []struct {
+		name      string
+		assetName string
+		run       func(*testing.T, installerHarnessOpts) installerHarnessResult
+	}{
+		{"FreeBSD", "urnetwork-provider-" + tag + "-freebsd-amd64.tar.gz", runFreeBSDInstaller},
+		{"Linux", "urnetwork-provider-" + tag + ".tar.gz", runLinuxInstaller},
+	} {
+		releaseJSON := fmt.Sprintf(`{
+		"tag_name": %q,
+		"published_at": "2026-10-27T00:00:00Z",
+		"assets": [
+			{"name": %q, "digest": "sha256:%s"}
+		]
+	}`, tag, tc.assetName, actualDigest)
+		t.Run(tc.name, func(t *testing.T) {
+			res := tc.run(t, installerHarnessOpts{
+				tag:         tag,
+				operation:   "update",
+				releaseJSON: releaseJSON,
+				tarballData: tarballContent,
+				existingBin: existingPayload,
+				failRestart: true,
+			})
+			if res.exitCode == 0 {
+				t.Fatalf("expected install to fail when restart fails, got exit 0 (out:\n%s)", res.stdout)
+			}
+			if res.finalBin != existingPayload {
+				t.Errorf("failed restart did not restore previous binary: got %q, want %q (out:\n%s)", res.finalBin, existingPayload, res.stdout)
+			}
+			combined := res.stdout + "\n" + res.stderr
+			if !strings.Contains(combined, "Restored") && !strings.Contains(combined, "restored") {
+				t.Errorf("expected message indicating rollback/restoration of previous binary:\n%s", combined)
+			}
+		})
+	}
+}
+
 // assertInstallRefused checks the fail-closed contract shared by both
 // installers: a non-zero exit, no tarball extraction, and an error that names
 // the tag and the provider asset it could not verify.

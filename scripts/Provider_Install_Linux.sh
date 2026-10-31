@@ -1411,8 +1411,23 @@ EOF
         systemctl --user daemon-reload
         
         if ! systemctl --user start urnetwork.service; then
-            pr_err "warning: Unable to restart urnetwork.service after update; please manually start it"
+            pr_err "Failed to restart urnetwork.service after update"
+            if [ -f "$install_path/bin/urnetwork.old" ]; then
+                if ${SUDO:-} mv -f "$install_path/bin/urnetwork.old" "$install_path/bin/urnetwork" 2>/dev/null; then
+                    systemctl --user daemon-reload 2>/dev/null || true
+                    systemctl --user start urnetwork.service 2>/dev/null || true
+                    pr_err "Restored previous binary after service restart failure"
+                else
+                    if [ -f "$install_path/bin/urnetwork.old" ] && [ -f "$install_path/bin/urnetwork" ]; then
+                        pr_err "Failed to restore previous binary; backup remains at %s and replacement at %s" "$install_path/bin/urnetwork.old" "$install_path/bin/urnetwork"
+                    else
+                        pr_err "Failed to restore previous binary; check backup at %s and installed binary at %s" "$install_path/bin/urnetwork.old" "$install_path/bin/urnetwork"
+                    fi
+                fi
+            fi
+            exit 1
         fi
+        ${SUDO:-} rm -f "$install_path/bin/urnetwork.old" 2>/dev/null || true
     fi
 }
 
@@ -2005,8 +2020,22 @@ EOF
 
     if [ "$openrc_units_stopped" -eq 1 ]; then
         if ! rc-service urnetwork start; then
-            pr_err "warning: unable to restart urnetwork after update; start it with: rc-service urnetwork start"
+            pr_err "Failed to restart urnetwork after update"
+            if [ -f "$install_path/bin/urnetwork.old" ]; then
+                if ${SUDO:-} mv -f "$install_path/bin/urnetwork.old" "$install_path/bin/urnetwork" 2>/dev/null; then
+                    rc-service urnetwork start 2>/dev/null || true
+                    pr_err "Restored previous binary after service restart failure"
+                else
+                    if [ -f "$install_path/bin/urnetwork.old" ] && [ -f "$install_path/bin/urnetwork" ]; then
+                        pr_err "Failed to restore previous binary; backup remains at %s and replacement at %s" "$install_path/bin/urnetwork.old" "$install_path/bin/urnetwork"
+                    else
+                        pr_err "Failed to restore previous binary; check backup at %s and installed binary at %s" "$install_path/bin/urnetwork.old" "$install_path/bin/urnetwork"
+                    fi
+                fi
+            fi
+            exit 1
         fi
+        ${SUDO:-} rm -f "$install_path/bin/urnetwork.old" 2>/dev/null || true
     elif openrc_service_running; then
         # The service was left running (the non-forced update path): starting
         # it would print "already started" while the OLD binary is still live.
