@@ -4,7 +4,7 @@ This document tracks all modifications made to the upstream URNetwork v3.23 code
 
 **Fork Based On**: urnetwork/connect v3.23  
 **Repository**: github.com/urfoundation/meso-miner  
-**Current Version**: v2026.10.24-1080497440-meso
+**Current Version**: v2026.10.31-1086896130-meso
 
 ---
 
@@ -393,9 +393,8 @@ If a new upstream version introduces changes to files in the "Modified" list abo
 
 ---
 
-**Last Updated**: 2026-06-20  
-**Maintained By**: @full-bars  
-**Contact**: Reference GitHub issues in urnetwork-3.23-fix repo
+**Maintained By**: urfoundation  
+**Contact**: GitHub issues on urfoundation/meso-miner
 
 ---
 
