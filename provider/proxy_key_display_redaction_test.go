@@ -67,6 +67,16 @@ func TestProvideProxyAddressErrorsAreRedacted(t *testing.T) {
 	}
 }
 
+func TestPercentEncodedProxyUserinfoIsRedacted(t *testing.T) {
+	address := "socks5%3A%2F%2Falice%3Asecret%40host:1080"
+	got := redactedProxyAddress(address)
+	for _, secret := range []string{"alice", "secret"} {
+		if strings.Contains(got, secret) {
+			t.Errorf("redacted address leaks %q: %q", secret, got)
+		}
+	}
+}
+
 // Errors from h3 packet conn factory formatting proxySettings.Address must not leak credentials.
 func TestH3PacketConnProxyAddressErrorsAreRedacted(t *testing.T) {
 	malformed := "socks5://alice:secret@host:1080/token"

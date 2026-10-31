@@ -3346,6 +3346,10 @@ func provide(opts docopt.Opts) {
 
 	nodeName := strings.TrimSpace(os.Getenv("URNETWORK_NODE_NAME"))
 
+	// Clear a proxy.lock left by the previous image before any goroutine here can take one of its own.
+	// A hot swap execs in place, so the pid survives and the old lock reads as held-by-a-live-holder;
+	// clearing it after the heartbeat has started could delete a lock this image just acquired.
+	cleanStaleSelfProxyLock()
 	go connect.HandleError(func() { runHealthHeartbeat(ctx, provideStartTime, os.Getenv("URNETWORK_PROFILE")) })
 	go connect.HandleError(func() { runJWTRefresher(ctx, apiUrl) })
 	go connect.HandleError(func() { runEarningWindows(ctx) })
@@ -4309,6 +4313,8 @@ func provide(opts docopt.Opts) {
 	// Startup imports identity/provenance into proxy.state and persists it. Take
 	// the cross-process lock across the read-modify-write so a clear or reload
 	// cannot replace this transaction with a stale snapshot.
+	// The stale self-lock was cleared at startup, before any goroutine could take
+	// one of its own, so this image is not deleting a lock it already holds.
 	releaseProxyLock, err := acquireProxyLockWait(ctx, proxyStartLockWait)
 	if err != nil {
 		shmLogFatal(20, "[proxy] could not acquire proxy lock: %v", err)
@@ -4678,10 +4684,6 @@ func provide(opts docopt.Opts) {
 	// user). Deliberately capture the same *connect.ProxySettings pointers
 	// the goroutines below run against.
 	reloader.seedRunningAuth(launchSettings)
-	// A hot swap execs in place: the pid survives and the previous image's
-	// proxy.lock would read as held-by-a-live-holder. Clear it before any
-	// reload path (watcher, watchdog, first reload) can observe it.
-	cleanStaleSelfProxyLock()
 	reloader.StartWatcher(ctx)
 	go superviseLoop(ctx, "reload_watchdog", func() { reloader.RunReloadWatchdog(ctx, func() time.Time { return nowFn() }) }, nil)
 	// Reconcile against the operator trim cap immediately at startup. The launch
@@ -4801,6 +4803,7 @@ func provide(opts docopt.Opts) {
 
 	printReadyUnlessCondensed()
 
+	<-ctx.Done()
 	quiesceForRun(ctx, reloader)
 	wg.Wait()
 
@@ -6142,6 +6145,7 @@ func proxyRemove(opts docopt.Opts) {
 	proxyConfig := readProxyConfig()
 
 	if all, _ := opts.Bool("--all"); all {
+		defer triggerProxyReload()
 		// Take the cross-process lock so a concurrent daemon health-snapshot
 		// write can't clobber this reset and silently revive the removed
 		// proxies (finding #11). Hold the lock across internal config write,

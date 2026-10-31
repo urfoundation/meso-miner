@@ -231,66 +231,82 @@ func_check_proxy_import() {
         rm -rf "$proxy_stage_home"
         return 1
     fi
+    proxy_corrupt=0
     if ! command -v jq >/dev/null 2>&1; then
         log "[WARN] Proxy staging failed: jq is unavailable; kept existing configuration"
         rm -rf "$proxy_stage_home"
         return 1
     fi
-    if [ -f "$proxy_config" ] && ! jq -e -s 'length == 1 and (.[0] | type == "object")' "$proxy_config" >/dev/null 2>&1; then
-        # Reserve a unique backup name so repeated failures never overwrite data.
-        proxy_backup=$(mktemp -p "$proxy_dir" "proxy.corrupt.$(date +%s).XXXXXX") || {
-            log "[WARN] Cannot back up unreadable proxy configuration $proxy_config; kept it unchanged"
-            rm -rf "$proxy_stage_home"
-            return 1
-        }
-        if ! mv -f "$proxy_config" "$proxy_backup"; then
-            log "[WARN] Cannot move unreadable proxy configuration $proxy_config to $proxy_backup"
-            rm -f "$proxy_backup"
-            rm -rf "$proxy_stage_home"
-            return 1
-        fi
-        log "[WARN] Unreadable proxy configuration $proxy_config moved to $proxy_backup"
-    fi
     if [ -f "$proxy_config" ]; then
-        if ! jq -c '.servers = {}' "$proxy_config" > "$proxy_stage_config" || [ ! -s "$proxy_stage_config" ]; then
-            log "[WARN] Proxy staging failed; kept existing configuration"
+        if [ ! -r "$proxy_config" ]; then
+            log "[WARN] Proxy staging failed: cannot read $proxy_config; kept existing configuration"
             rm -rf "$proxy_stage_home"
             return 1
         fi
-    elif ! printf '%s\n' '{"servers":{}}' > "$proxy_stage_config"; then
-        log "[WARN] Proxy staging failed; none configured"
+        if jq -se 'length == 1 and (.[0] | type == "object")' "$proxy_config" >/dev/null 2>&1; then
+            if ! jq -c '.servers = {}' "$proxy_config" > "$proxy_stage_config"; then
+                log "[WARN] Proxy staging failed while copying settings; kept existing configuration"
+                rm -rf "$proxy_stage_home"
+                return 1
+            fi
+        else
+            proxy_corrupt=1
+        fi
+    fi
+    if [ ! -f "$proxy_stage_config" ] && ! printf '%s\n' '{"servers":{}}' > "$proxy_stage_config"; then
+        log "[WARN] Proxy staging failed; no new configuration installed"
         rm -rf "$proxy_stage_home"
         return 1
     fi
 
     log "[INFO] proxy.txt found; adding proxy"
     PROVIDER_BIN="$APP_DIR/urnetwork_${A_SYS_ARCH}_${PROVIDER_FLAVOR}"
-    proxy_failure=""
     if ! HOME="$proxy_stage_home" "$PROVIDER_BIN" proxy add --proxy_file="/app/proxy.txt" -f; then
-        proxy_failure="provider import failed"
+        proxy_failure="provider import command failed"
     elif ! jq -e '(.servers|type=="object") and (.servers|length>0)' "$proxy_stage_config" >/dev/null 2>&1; then
-        proxy_failure="staged server list is empty or invalid"
-    elif ! chmod 600 "$proxy_stage_config" || ! mv -f "$proxy_stage_config" "$proxy_config"; then
-        proxy_failure="could not install staged configuration"
-    fi
-    if [ -z "$proxy_failure" ]; then
-        log "[INFO] Proxy configuration replaced from proxy.txt"
+        proxy_failure="staged configuration is invalid or has no servers"
+    elif ! chmod 600 "$proxy_stage_config"; then
+        proxy_failure="could not set staged configuration permissions"
     else
-        if [ -f "$proxy_config" ]; then
-            log "[WARN] Proxy replacement failed: $proxy_failure; kept existing configuration"
-        else
-            log "[WARN] Proxy replacement failed: $proxy_failure; none configured"
+        proxy_backup=""
+        if [ "$proxy_corrupt" -eq 1 ]; then
+            proxy_backup="$proxy_config.corrupt.$(date +%s)"
+            proxy_backup_base="$proxy_backup"
+            proxy_backup_index=0
+            while [ -e "$proxy_backup" ]; do
+                proxy_backup_index=$((proxy_backup_index + 1))
+                proxy_backup="$proxy_backup_base.$proxy_backup_index"
+            done
+            if ! mv "$proxy_config" "$proxy_backup"; then
+                log "[WARN] Proxy replacement failed: cannot move corrupt configuration $proxy_config to $proxy_backup; kept existing configuration"
+                rm -rf "$proxy_stage_home"
+                return 1
+            fi
+            log "[WARN] Moved corrupt proxy configuration $proxy_config to $proxy_backup"
         fi
-        rm -rf "$proxy_stage_home"
-        return 1
+        if mv -f "$proxy_stage_config" "$proxy_config"; then
+            log "[INFO] Proxy configuration replaced from proxy.txt"
+            rm -rf "$proxy_stage_home"
+            return 0
+        fi
+        proxy_failure="could not install staged configuration"
+        if [ -n "$proxy_backup" ] && ! mv "$proxy_backup" "$proxy_config"; then
+            log "[WARN] Could not restore corrupt proxy configuration; original remains at $proxy_backup"
+        fi
+    fi
+    if [ -f "$proxy_config" ]; then
+        log "[WARN] Proxy replacement failed: $proxy_failure; kept existing configuration"
+    else
+        log "[WARN] Proxy replacement failed: $proxy_failure; none configured"
     fi
     rm -rf "$proxy_stage_home"
+    return 1
 }
 
-# A failed import is only fatal when there is no usable configuration to fall
-# back on. With a saved config the container keeps working on it; without one
-# it would start sending traffic straight out of its own address while the
-# operator believes the mounted proxy is in use, so it stops instead.
+# A failed import is only fatal when there is no configuration to fall back on.
+# With a saved config the container keeps working on it; without one it would
+# start sending traffic straight out of its own address while the operator
+# believes the mounted proxy is in use, so it stops instead.
 func_check_proxy() {
     if func_check_proxy_import; then
         return 0
@@ -443,20 +459,20 @@ func_login_retry_loop() {
             echo "DEBUG: USER_AUTH set=$user_auth_set length=${#USER_AUTH}"
             echo "DEBUG: PASSWORD set=$password_set length=${#PASSWORD}"
             echo "DEBUG: AUTH_EXIT_CODE=$AUTH_EXIT_CODE"
-            # Preserve the output line without exposing echoed credentials.
-            # The match ignores case: the server may echo the address normalized.
-            auth_output_redacted=no
+            # Empty credentials must not match every output string, and the
+            # match ignores case: the server may echo the address normalized.
+            auth_output_sensitive=no
             auth_output_lower=$(printf '%s' "$AUTH_OUTPUT" | tr '[:upper:]' '[:lower:]')
             if [ -n "$USER_AUTH" ]; then
                 user_auth_trimmed=$(printf '%s' "$USER_AUTH" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
                 user_auth_lower=$(printf '%s' "$user_auth_trimmed" | tr '[:upper:]' '[:lower:]')
-                case "$auth_output_lower" in *"$user_auth_lower"*) auth_output_redacted=yes ;; esac
+                case "$auth_output_lower" in *"$user_auth_lower"*) auth_output_sensitive=yes ;; esac
             fi
             if [ -n "$PASSWORD" ]; then
                 password_lower=$(printf '%s' "$PASSWORD" | tr '[:upper:]' '[:lower:]')
-                case "$auth_output_lower" in *"$password_lower"*) auth_output_redacted=yes ;; esac
+                case "$auth_output_lower" in *"$password_lower"*) auth_output_sensitive=yes ;; esac
             fi
-            if [ "$auth_output_redacted" = yes ]; then
+            if [ "$auth_output_sensitive" = yes ]; then
                 echo "DEBUG: AUTH_OUTPUT=[redacted]"
             else
                 echo "DEBUG: AUTH_OUTPUT=$AUTH_OUTPUT"
@@ -1066,6 +1082,11 @@ func_start_provider() {
 
 # === Bootstrap Sequence ===
 func_bootstrap() {
+    if ! provider_env_validate "$STATE_DIR"; then
+        log "[ERROR] Invalid provider environment; fix the setting logged above and restart"
+        exit 1
+    fi
+
     case "$PROVIDER_MODE" in
       stable)
         # sh /app/urnetwork_ipinfo.sh
@@ -1091,8 +1112,8 @@ func_bootstrap() {
         func_ip_checker
         func_start_vnstat
         func_check_update
-        # Proxy import invokes the provider binary, which may only have been
-        # downloaded by the update check on a fresh nightly container.
+        # The proxy import runs the provider binary, which only exists after
+        # the update check has downloaded it on a fresh nightly container.
         func_check_proxy
         # choose_network runs after func_check_update: on a fresh nightly
         # container the urnetwork_${A_SYS_ARCH}_${PROVIDER_FLAVOR} binary doesn't exist

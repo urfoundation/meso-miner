@@ -1,40 +1,27 @@
-# Extender role (work in progress, not active)
+# Extender role (work in progress, does not activate yet)
 
-The extender role is a work in progress. It does not activate yet, so no provider serves as an extender. The role is opt-in and off by default. The wiring has landed: setting `URNETWORK_EXTENDER=on` starts the role's listeners on the direct slot. Activation, the directory, gossip and probes are not implemented in this lane (`provider/extender_role.go:35-37`), so enabling the role does not make the provider an extender.
+The extender role is a work in progress and does not activate yet. `URNETWORK_EXTENDER` starts the role's listener, but activation, the directory, gossip and the probes are not implemented, so the role serves no traffic (`provider/extender_role.go:29-36`). The sections below describe the switches and the carrier layout the role is built around. It is opt-in and off by default.
 
-The sections below describe what the role would need once activation is implemented. They are not a working setup guide.
+> [!WARNING]
+> The extender role is a work in progress and is unproven. It has not been verified in production, and it does not run on the fleet. The steps below describe what the code does when the switch is set (#289, #290); they do not show the role serving traffic.
 
 ## Before you start
 
-The role runs from the provider's direct slot because that slot uses this host's address. Configured proxies do not prevent the role from running while direct providing is enabled. If direct providing is disabled, the role does not start and the provider continues without it.
+The host must be reachable on the ports you publish. Open the ports in the host firewall and forward them through any router or NAT in front of the host.
 
-`DISABLE_DIRECT_IP=1` disables direct providing at startup unless a runtime direct setting overrides it. When the direct slot is disabled, the provider logs:
+Set `URNETWORK_EXTENDER=on` to enable the role. The provider also accepts `1` and `true`; other values leave it off. The role uses the direct slot, whose egress address belongs to this host. Configured proxy entries do not block the role, but a proxied slot cannot host it because that slot exits through the proxy's address.
+
+Direct providing must be enabled at startup. The provider checks a saved `~/.urnetwork/direct` setting before `DISABLE_DIRECT_IP=1`; with neither set, direct providing is on. If it is disabled, the provider logs:
 
 ```text
 [extender] role not started: direct providing is disabled
 ```
 
-The role keeps its identity in `~/.urnetwork/.provider.extender.key`. It creates the file on first use with mode `0600`. In Docker, persist `/root/.urnetwork` so the identity survives container recreation.
+The extender identity is stored at `~/.urnetwork/.provider.extender.key` with mode `0600`. In Docker, keep `/root/.urnetwork` on a persistent volume so the identity survives container recreation.
 
-## Carrier ports
+## Forward allow list
 
-The role would need these carriers:
-
-- TCP 443 for the TLS carrier.
-- UDP 443 for QUIC.
-- UDP 4053 for DNS.
-
-The optional setting `URNETWORK_EXTENDER_DNS53=on` also enables DNS on UDP 53. Port 4053 remains the standard DNS carrier. If port 53 cannot be bound, the provider keeps 4053.
-
-A bind failure does not stop the provider. If TCP 443 is unavailable while UDP carriers are serving, the extender state is `tcp_unavailable` and the provider retries TCP no faster than every three minutes. Binding port 443 on a bare-metal host requires root or `CAP_NET_BIND_SERVICE`.
-
-The container must publish the ports you intend to use, and the host firewall or upstream router must allow inbound traffic to them. Publishing a Docker port does not open an upstream firewall or router.
-
-## Choose which destinations to forward
-
-Set `URNETWORK_EXTENDER_ALLOWED_HOSTS` to a comma-separated list of exact hostnames and `*.domain` patterns. An empty list refuses every forward request. A wildcard matches subdomains, but not the bare domain. The list has no effect until forwarding is implemented.
-
-For example, this allows `example.com` and subdomains of `example.org`:
+`URNETWORK_EXTENDER_ALLOWED_HOSTS` is a comma-separated list of exact hostnames and `*.domain` patterns. A wildcard matches subdomains, including deeper names, but does not match the base domain. An empty list refuses every forward request.
 
 ```sh
 URNETWORK_EXTENDER_ALLOWED_HOSTS='example.com,*.example.org'
@@ -46,13 +33,25 @@ When the list is empty, the provider logs:
 [extender] no forward hosts configured (URNETWORK_EXTENDER_ALLOWED_HOSTS); every forward request will be refused
 ```
 
+## Ports
+
+The provider attempts these carriers:
+
+- TCP 443 carries the TLS carrier.
+- UDP 443 carries QUIC.
+- UDP 4053 carries the DNS carrier.
+
+Set `URNETWORK_EXTENDER_DNS53=on` to also bind the DNS carrier on UDP 53. It is additive, so DNS 4053 remains enabled. Port 53 is commonly already held by a local resolver.
+
+If TCP 443 cannot be bound, the role continues with the other carriers that bind and retries TCP 443 no faster than every three minutes. Binding a port below 1024 requires root or `CAP_NET_BIND_SERVICE` on a bare-metal host. A carrier bind failure does not stop the provider.
+
 ## Docker
 
-The default Docker examples do not publish extender ports. The example below starts the role's listeners with the environment settings, port mappings and persistent state volume. It does not make the provider an extender:
+The default Docker examples publish no inbound ports. The example below shows the carrier ports a future extender deployment would need to publish. The role cannot serve traffic yet, so the command does not forward anything:
 
 ```sh
 docker run -d \
-  --name=urfix \
+  --name=meso-extender \
   --pull=always \
   --restart=unless-stopped \
   --cap-add=NET_ADMIN \
@@ -64,16 +63,28 @@ docker run -d \
   -e BUILD=jwt \
   -e URNETWORK_EXTENDER=on \
   -e URNETWORK_EXTENDER_ALLOWED_HOSTS='example.com,*.example.org' \
-  -v urfix_config:/root/.urnetwork \
+  -e HOST_HOSTNAME="$(hostname)" \
+  -v meso_extender_state:/root/.urnetwork \
   ghcr.io/urfoundation/meso-miner:latest AUTH_CODE_HERE
 ```
 
-Replace `AUTH_CODE_HERE` with the one-time auth code used by the existing Docker examples. The named volume keeps the JWT and extender identity across container recreation. To enable the optional DNS carrier on port 53, also set `URNETWORK_EXTENDER_DNS53=on` and publish `53:53/udp` if that port is available on the host.
+To add the optional DNS port, set `URNETWORK_EXTENDER_DNS53=on` and add `-p 53:53/udp` to the `docker run` command. Do not publish UDP 53 if another service on the host already owns it. If the host is behind a router, forward the published ports to it as well.
 
-For the other image options and authentication modes, see [Docker Deployment](/urfoundation/meso-miner/wiki/Docker-Deployment).
+## Bare-metal install
 
-## Check the role
+Set the same variables in the provider service environment and restart the service:
 
-When no allow list is configured, the provider logs the warning shown above. If TCP 443 is unavailable but other carriers are listening, the role reports `tcp_unavailable` in its status and in the `urnet_extender_state` metric. The `urnet_extender_carrier_listening` metrics show which of TCP, QUIC and DNS are listening. These fields report listener state only. They do not show that the role serves forwards.
+```ini
+Environment="URNETWORK_EXTENDER=on"
+Environment="URNETWORK_EXTENDER_ALLOWED_HOSTS=example.com,*.example.org"
+```
 
-See [Log Message Reference](/urfoundation/meso-miner/blob/main/LOG_REFERENCE.md) for the extender log messages and [Configuration](/urfoundation/meso-miner/wiki/Configuration) for the environment settings.
+## Confirm the role started
+
+The first `[extender] ready` log line reports the carriers that are listening and the forwarding policy. A `tcp_unavailable` state means TCP 443 is being retried while other carriers remain available. A ready line confirms the listeners bound inside the provider, not that a firewall, router or upstream network can reach them. Test from another network.
+
+If the role cannot start for another reason, the provider logs `[extender] role disabled:` followed by the error and continues without the extender role.
+
+When the provider metrics endpoint is enabled, the extender exports `urnet_extender_enabled`, `urnet_extender_state`, `urnet_extender_carrier_listening`, `urnet_extender_carrier_listen_error`, `urnet_extender_requests_total`, `urnet_extender_refused_total`, `urnet_extender_connections_active`, `urnet_extender_relay_bytes_total` and `urnet_extender_tcp_retry_total`.
+
+For the surrounding container startup behavior, see [Docker Deployment](/urfoundation/meso-miner/wiki/Docker-Deployment) and [Log Message Reference](/urfoundation/meso-miner/blob/main/LOG_REFERENCE.md).

@@ -375,12 +375,8 @@ jobs:
 
       - name: Docker startup safety tests
         run: |
-          if ! command -v rg >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y ripgrep
-          fi
-          chmod +x docker/scripts/test_startup_safety.sh
-          ./docker/scripts/test_startup_safety.sh
+          command -v rg >/dev/null || sudo apt-get install -y ripgrep
+          bash docker/scripts/test_startup_safety.sh
 
       - name: Shellcheck docker scripts (error severity)
         run: |

@@ -9,7 +9,7 @@ This guide walks you through a complete provider setup with explanations at each
 ## 📋 Before you start
 
 You need:
-- A Linux, macOS, or Windows machine with a **wired ethernet connection** — the provider relays traffic in real time, so connection quality matters more than raw CPU/RAM. Avoid wireless backhaul, VPNs on the provider machine, carrier-grade NAT, or anything that adds latency or jitter between the provider and the peers it serves.
+- A Linux, macOS, Windows, or FreeBSD machine with a **wired ethernet connection** — the provider relays traffic in real time, so connection quality matters more than raw CPU/RAM. Avoid wireless backhaul, VPNs on the provider machine, carrier-grade NAT, or anything that adds latency or jitter between the provider and the peers it serves.
 - An **auth code** (generate one from the [web dashboard](https://app.ur.network), the [ur.io site](https://ur.io/), or the URnetwork mobile app)
 - Optional: a list of SOCKS5 proxies you want the provider to manage. Resource needs scale with proxy count — for very large proxy pools, allocate more RAM accordingly.
 
@@ -23,7 +23,10 @@ You need:
 | **Systemd** (Linux native) | Dedicated servers, maximum performance | Automatic on crash, manual for config changes |
 | **launchd** (macOS native) | Mac desktops/servers | Automatic on crash via `KeepAlive`; no auto-update yet |
 | **Native Windows service** | Windows desktops/servers | Starts at login (Task Scheduler logon task); auto-update on by default |
+| **rc.d** (FreeBSD native) | FreeBSD servers | Standard service control with idempotent `onestart`; updates from a cron entry |
 | **Docker** | Containers, easy migration, isolated environment, any OS with Docker | Automatic with `--restart unless-stopped` |
+
+The FreeBSD path is documented separately, including the root-owned install tree, the `rc.d` service and the sysctl tuning it needs: [FreeBSD guide](../FreeBSD.md).
 
 ---
 
@@ -71,16 +74,17 @@ Then load it:
 urnet-tools proxy add ~/proxies.txt
 ```
 
-`urnet-tools proxy paste` is interactive: run it, paste the lines at the prompt,
-then press Ctrl+D. It normalizes them on the way in and reloads the provider, so
-there is no separate `proxy refresh` step:
+`proxy paste` takes the same lines from stdin or a file and normalizes them on
+the way in:
 
 ```sh
-urnet-tools proxy paste
+cat ~/proxies.txt | urnet-tools proxy paste
+urnet-tools proxy paste --file=~/proxies.txt
 ```
 
-Use it when you have the list in hand and would rather paste it than save a file;
-`proxy add` stays the plain path for a file already on disk.
+Use it when the list streams straight from a pipe or another tool and you would
+rather not manage an intermediate file; `proxy add` stays the plain path for a
+file already on disk.
 
 ### 4. Start and verify
 
