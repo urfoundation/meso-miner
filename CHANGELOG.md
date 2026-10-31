@@ -1,12 +1,62 @@
 ## [Unreleased]
 
-Everything merged after `v2026.10.24-1080497440-meso`.
+Everything merged after `v2026.10.24-1080497440-meso`. Claims below were checked against the code at the head of `main`; behaviour on FreeBSD and macOS is read from the code and has not been run on those platforms.
 
 ### Added
 
-- **The v2026 extender stack lands; the role is a work in progress and does not activate yet** ([#289](https://github.com/full-bars/meso-miner/pull/289), [#290](https://github.com/full-bars/meso-miner/pull/290)): the extender v2 library and server, the feed and gossip composition layer and the pinned directory candidate, ported from 3.23-fix. The provider has wiring for the serving role on its direct slot (TCP 443, then QUIC 443 and DNS 4053), opt-in with `URNETWORK_EXTENDER` and with forwards limited to `URNETWORK_EXTENDER_ALLOWED_HOSTS`. The serving role is not verified in production and does not activate in production. `provider/extender_role.go` says it does not implement activation, the directory, gossip or probes. A node that sets neither variable is unchanged.
+- **A FreeBSD provider installer, and the provider now lives in a root-owned tree** ([#309](https://github.com/full-bars/meso-miner/pull/309)): FreeBSD had no installer of its own, and the docs pointed at a script that did not cover the host. The script installs the flat per-architecture tarball the release publishes (`urnetwork-provider-<tag>-freebsd-<arch>.tar.gz`, with `provider` and a shell `urnet-tools` at the top level; the installer takes the Go `urnet-tools` from its own release asset) into `/usr/local/libexec/urnetwork-provider`, owned by `root:wheel` with group and other write removed, so the account that runs the relay cannot rewrite the binary root executes on every start, restart and update. The state directory is the one thing handed to the service user, created `0700` in that user's home because the login token and proxy state live there. Every root write goes through `priv`, which uses `sudo` when the installer is not root, and the `rc.d` script is written from one template so the root and non-root paths cannot drift. `sysrc` sets `urnetwork_enable` and `urnetwork_user` only when they are unset, so an operator's choice survives every update. Discovery learns the new path, so a stopped install is still found, and the installer and the dispatcher try `curl`, then the base system's `fetch`, then `wget`, each staying nonzero on an HTTP error status, so a caller that treats a nonzero status as "no such asset" still works. That removes the downloader requirement only. The installer needs neither `jq` nor `python3`: it reads the release metadata with `awk` when neither is installed, and the FreeBSD base system ships `awk` (see the verification entry under Fixed).
+
+### Changed
+
+- **The CFAA and IP blocker tables refreshed** ([#306](https://github.com/full-bars/meso-miner/pull/306), [#308](https://github.com/full-bars/meso-miner/pull/308), [#313](https://github.com/full-bars/meso-miner/pull/313)): three upstream syncs since the tag. The counts below are read from `ip_security_cfaa_block.go` and `ip_blocker_block.go`: the CFAA table has 48,764 IPv4 ranges (47,632 at the tag) and 539 IPv6 ranges (619 at the tag), and the IP blocker retains 164,781 blocked-host records (164,225 at the tag). The generated files carry each feed's digest and parse counts in their provenance comment. Data only, and it takes effect when a node runs this release.
+- **The contract log line separates the verb from the proxy** (71c083752, in [#313](https://github.com/full-bars/meso-miner/pull/313)): the proxy tag was joined to the verb with a single space, so the line read as one phrase. `[contract] acquired`, `denied`, `closed` and `checkpointed` now read `[contract] <verb> | proxy[<index>] (<address>)`, for example `[contract] acquired | proxy[3] (203.0.113.22:1081) size=256 KiB destination=...`, and the direct slot reads `proxy[0] (direct)`. A script that matched the old `acquired proxy[` text needs updating; `[contract] acquired` and `[contract] closed` still match as prefixes. Documented in `LOG_REFERENCE.md`.
+- **`--i-am-on-my-own-workstation` is removed** ([#322](https://github.com/full-bars/meso-miner/pull/322)): the override is gone from `urnet-tools wallet`, and passing it now fails with a message that says it was removed, so an old script stops instead of being silently accepted. On a box that looks like a fleet node, the `--coldkey_seed_file` form asks a human at the terminal and refuses when nothing can answer. `wallet sign` is no longer gated, because the seed stays in the browser extension.
+
+### Fixed
+
+- **The FreeBSD installer refuses an unverifiable `urnet-tools` and a damaged install tree** ([#314](https://github.com/full-bars/meso-miner/pull/314), a9b6203d4, 1e0c246ab): the earlier installer could not read the release digest without `jq` or `python3`, printed a warning and installed the shell `urnet-tools` instead. That fallback is gone on FreeBSD. The `urnet-tools-freebsd-<arch>` asset is installed only when its SHA-256 matches the digest the release publishes (checked with `sha256(1)`, then `openssl`); a missing digest, a failed download or a mismatch stops the install with an error, and nothing is renamed over the live binaries first. The `jq` or `python3` requirement this entry first described was lifted by the installer-verification change below, which reads the metadata with `awk` on a bare host. Before the rename the installer also makes the install tree root-owned without group or other write access and checks every file in it. A symlink inside the tree is not repaired or removed: the install stops with `symlink in install tree; refusing to repair`. The provider tarball was not digest-checked when this entry was written; the installer-verification change below adds that check.
+- **FreeBSD discovery requires an execute permission the invoking user holds** ([#315](https://github.com/full-bars/meso-miner/pull/315)): discovery accepted any file with an execute bit set. It now asks the kernel with `access(2)` `X_OK`, and the root-owned `libexec` binary must also carry the other-execute bit because the service user is not its owner. The per-user execute test is skipped when run as root, and has not run on a FreeBSD host.
+- **Every macOS update staged the Linux binary and then refused it** ([#323](https://github.com/full-bars/meso-miner/pull/323)): `tarRelPath` in `internal/urnettools/update.go` had a case for `windows` and one for `freebsd` but none for `darwin`, so it fell through to `linux/<arch>/provider`. The update downloaded the universal tarball correctly, extracted the Linux ELF, and the Mach-O guard refused it, so no macOS update could finish. `darwin` now maps to `darwin/<arch>/provider`, which `.github/workflows/release.yml` packs for both architectures, and a test pins both. Unit-tested only; not run on a Mac.
+- **The provider's proxy state is written under one lock, in one order** (SN release port, [#317](https://github.com/full-bars/meso-miner/pull/317), 477be273, f29f7283): startup read and rewrote `proxy.state` without the cross-process proxy lock, so a concurrent clear or reload could be overwritten by the older snapshot; it now holds the lock across the read-modify-write and waits for a held lock instead of aborting the launch, after clearing the self-lock an in-place hot swap inherits. `proxy remove --match` writes the exclusion first and removes under the same lock, so a URL fetch cannot merge matching proxies back, and it aborts when the URL state is unreadable. `proxy remove --all` holds the lock across the config write, state reset and URL cache reset, reports an unreadable `proxy.state`, and signals a reload after every clear attempt. Shutdown signals the reloader to stop before it waits, with the stop channel initialised under a lock, so a queued reload no longer holds up exit until its timeout. `proxy add` to a source file keeps that file's mode and ownership, and proxy addresses with malformed or percent-encoded parts are redacted in logs. The gossip vantage stream test strengthened in the 3.23-fix half of this port pair is not part of this repo's #317, so it is not claimed here.
+- **The probe asks every address before it convicts a route** ([#304](https://github.com/full-bars/meso-miner/pull/304)): each probe loop read only the first address a host resolved to, so a host whose first address failed was recorded as a proxy failure even when its second answered, and a v6-only target reached the v4 encoder, where a nil `to4` left the frame at atyp ipv4 with an all-zero destination and the proxy answered for `0.0.0.0`. The SOCKS5 frame now uses a family-aware encoder and carries the real 16-byte destination, every resolved address is asked once per loop and the host counted once, and a round where the limiter cut the address set short reports no evidence unless something positive was seen. Two dead probe hosts are replaced with reachable ones, and the reputation-class hosts stay out of the health table.
+- **The URL fetch failure reason stays in the important log** ([#305](https://github.com/full-bars/meso-miner/pull/305)): the cycle summary says `N failed`, but the cause — timeout, DNS, status code — is on the per-source `fetch failed for` line, which the important log did not keep and the ring rolled out within minutes.
+- **The RAM log trim stays off the writer's lock, and the descriptor swap is retried** ([#307](https://github.com/full-bars/meso-miner/pull/307)): a failed reopen left the reader on an unlinked file that nothing would trim, and the fixed temp name could be blocked in a shared `/dev/shm`. The swap is retried every pass, the temp file is unique, and the tail hints use `-F` so they follow the name after a rename.
+- **The paste prompt names the key that ends input on Windows** ([#311](https://github.com/full-bars/meso-miner/pull/311)): the hint hardcoded Ctrl+D, which does nothing in a native Windows console where stdin ends on Ctrl+Z then Enter. It names both on Windows, because a pty there (Git Bash, MSYS) still ends on Ctrl+D and Ctrl+Z only suspends the process, and a unit test pins both branches. The prompt is also printed in a Git Bash or MSYS pty, which Go hands to the process as a pipe: a pipe counts as interactive only on Windows and only with `TERM` set, so a scripted run on Linux or macOS stays silent.
+- **An extender source that asks again at once is answered** (db1abbcc): the in-flight slot was freed after the answer was written, so a source that answered and asked again immediately was refused as already having a query in flight. The slot is freed before the answer goes on the wire, the deferred release stays for early returns, and a test observes the slot at write time.
+- **Docker startup keeps valid sessions and proxy configuration** ([#319](https://github.com/full-bars/meso-miner/pull/319)): the auth-code argument now reaches the provider (`URNETWORK_AUTH_CODE` is passed to `auth` for the first login and for re-authentication), and an invalid provider environment setting stops startup with `Invalid provider environment` before authentication. Nightly starts reuse a valid saved JWT. The nightly startup checks for and downloads a provider update before importing `/app/proxy.txt`, so a fresh nightly container has its binary before the import. The start script no longer deletes the saved `~/.urnetwork/proxy` before it looks for `/app/proxy.txt`; a mounted file is imported into a staging directory and replaces the saved configuration only if the import produced valid servers. A failed import keeps a usable saved configuration, and startup refuses to continue (`Proxy import failed and no configuration is saved`) when none remains. With `ENABLE_IP_CHECKER=true` the checker is downloaded to a temporary file and run only if the download succeeded, so a failed fetch logs `IP checker fetch failed` instead of a false success. Docker startup does not read `URNETWORK_STATE_DIR`: an earlier change that did was reverted because the provider ignores a shell-only override, and the scripts use `$HOME/.urnetwork`.
+- **The installers verify the provider archive and replace the binary by rename** ([#316](https://github.com/full-bars/meso-miner/pull/316)): the Linux and FreeBSD installers installed the provider tarball without comparing it with the release digest. Both now read the release metadata first and refuse to install when it cannot be read or does not list the provider archive, and they compare the downloaded archive with its SHA-256 digest before extracting it. A release that lists the archive without a digest is refused on FreeBSD; the Linux installer warns once and continues. The FreeBSD installer reads the metadata with `jq`, then `python3`, then `awk`, so a bare host no longer needs a parser. The replacement binary is staged beside the live one and renamed over it, a failed service restart restores the previous binary, and the version marker is written only after the service has started. The FreeBSD installer stops when it cannot keep a backup of the live binary, and `urnet-tools` self-update refuses an existing backup path instead of truncating it. Read from `scripts/Provider_Install_FreeBSD.sh`, `scripts/Provider_Install_Linux.sh` and `internal/urnettools/update.go`; not run on a bare FreeBSD host.
+- **Preset network switches warn about a stale token again** ([#324](https://github.com/full-bars/meso-miner/pull/324), 3cc1e1294): `choose_network` with a preset saved the configuration first and then compared the API URL with the one it had just written, so the notice never fired. It reads the previous selection before the write.
+- **`urnet-tools logs --important` follows the newest important log** ([#324](https://github.com/full-bars/meso-miner/pull/324), b7ad8a094): it tailed only the RAM file, so a provider keeping `important.log` in the service user's state directory showed nothing, and a rotation ended the follow. It picks the newer of the two files and follows by name.
+- **The FreeBSD installer never prompts for a password while adding the PATH line** ([#324](https://github.com/full-bars/meso-miner/pull/324), 9eb0d5626): root edits the service user's rc file through `su`, the service user edits it directly, and anyone else is told to make the edit by hand.
+- **The FreeBSD rc.d start keeps the previous run's log** (766968be): the start ran the install over `stdout.log` every time, which truncated it, so a restart erased the last run. The log is created only when it is missing, and a failed creation stops the start.
+- **The FreeBSD running check sees a provider that has not exec'd yet** (587b81f5): the daemon writes the child's pid before the child execs the provider, so the argv check found nothing and a healthy boot read as stopped. The check now accepts the pidfile pid while its argv still shows this service's `daemon(8)` command line. The process scan is deliberately limited to the service user's processes (`ps -U`): an unfiltered scan let any local user fake the provider's argv and make `start` report it running while `stop` signalled the fake, so that scan was reverted in 71075bc7.
+- **Staged FreeBSD install files are removed with the privilege that created them** (d64a8fd1): a failed non-root install left a root-owned temp file behind. Removals now go through `priv_rm`, with an EXIT trap for the early exits.
+
+### Security
+
+- **Docker auth debug output redacts echoed credentials** ([#319](https://github.com/full-bars/meso-miner/pull/319)): with `DEBUG=true`, the login output is replaced with `[redacted]` if it contains the configured username or password, including a case-normalized echo.
+- **The FreeBSD installer's root writes are fenced** ([#309](https://github.com/full-bars/meso-miner/pull/309)): the state-directory `chown -R -h` recursed into a tree the service user owns, where a hard link to a root-owned file would have been handed to that user — `-h` only guards symlinks. The chown now owns the top directory only and warns about anything inside owned by someone else. The `cd` also sat in its own subshell, so the recursive chown and chmod ran as root in whatever directory the installer was started from; the `cd` and both writes now happen in one subshell that requires `pwd -P` to match the service home before touching anything. `urnet-tools` is removed, and the failure reported, when it cannot be chowned to `root` instead of leaving a root-executed binary owned by the invoker, and `urnet-tools update` no longer hands the libexec tree back to the service user after a swap. Root's auto-update cron now schedules only the root-owned staged tool and logs under `/var/log/urnetwork`, because the old line ran the invoker's executable and logged into the service user's home. The running check scans only the service user's processes, so a local user cannot fake the provider's argv and make `start` report already running while `stop` signals the fake. `stdout.log` is kept only when `stat -f '%HT %l %Su'` says it is a regular file with one link owned by the service user; a fifo, a hard link or a foreign owner is removed before `daemon(8)` opens it as root.
+
+### CI
+
+- **The FreeBSD owner-execute test runs as an unprivileged user** ([#325](https://github.com/full-bars/meso-miner/pull/325), ccc31aa3): as root, `access(2)` reports `X_OK` for any execute bit, so the test skipped in CI and the rule had no executing coverage. The workflow now runs it a second time as `nobody`, on a copy of the test binary in `/tmp`, and requires the root run to skip with its stated reason and the `nobody` run to pass.
+- **The FreeBSD test invocation uses the supported `su` form** (1c93a95d): FreeBSD passes the arguments after the login to the caller's shell, so the unprivileged run never reached the test. The test gets a writable temporary directory, so a skipped or failed run still fails the job.
+- **The installer tests for the group-writable, gate-failure and `stdout.log` paths run in CI** ([#325](https://github.com/full-bars/meso-miner/pull/325), d39259dc): the group-writable `urnet-tools` check, the non-root gate path, a gate failure that keeps the live binary and version, and the fifo or hard-linked `stdout.log` replacement.
+- **The openrc and wget installer tests run in CI** (8c56b8ff): 14 installer tests that the other fork already ran are now in this harness, covering the openrc root-owned tree, the staged tool, state-directory symlinks, wget flags, the systemd restart fallback and the sudo package commands.
+- **The shellrc falsification test pins a commit in this repo** (875e424d): the falsification step read the pre-fix installer from a commit that is not in this repository's history, so CI failed under `REQUIRE_FALSIFICATION=1`. It now pins the parent of `69006d0a0c`, which is `609948fca84a` and an ancestor of `main`.
+
+### Documentation
+
+- **The FreeBSD pages describe the tree the installer creates** ([#309](https://github.com/full-bars/meso-miner/pull/309), d63d33e7): `docs/FreeBSD.md` says the provider is root-owned under `/usr/local/libexec/urnetwork-provider` with only the state directory in the service user's home, lays out the six-step service-user order, and tells a root-shell install to name an account that already exists — the installer refuses to run the service as root and never creates the account. It also says what a bare host needs before it installs: `fetch`, which the base system has, and no JSON parser, because the installer reads the `urnet-tools` digest with `awk` when `jq` and `python3` are absent; the Installation page names FreeBSD wherever it lists platforms and uses the `fetch` form.
+- **The proxy guides show paste as the interactive flow it is** ([#310](https://github.com/full-bars/meso-miner/pull/310)): pasting a proxy list, the key that ends the prompt on each platform, and the file-backed alternative are documented in `docs/Adding-Proxies.md` and the proxy-management page.
+
+## [v2026.10.24-1080497440-meso] — 2026-10-24
+
+### Added
+
+- **The v2026 extender stack, as a work in progress that is not proven** ([#289](https://github.com/full-bars/meso-miner/pull/289), [#290](https://github.com/full-bars/meso-miner/pull/290)): the extender v2 library and server, the feed and gossip composition layer and the pinned directory candidate, ported from 3.23-fix. With the switch set, the role binds its carriers on the direct slot (TCP 443, then QUIC 443 and DNS 4053). It has not been verified in production and is not active on the fleet; the release notes for this tag say the same. It is opt-in with `URNETWORK_EXTENDER`, and forwards are limited to the hosts listed in `URNETWORK_EXTENDER_ALLOWED_HOSTS`. A node that sets neither is unchanged.
 - **The TLS ClientHello is a runtime switch** (`tls_hello`, [#289](https://github.com/full-bars/meso-miner/pull/289)): `urnet-tools set tls-hello on|off` makes the normal and resilient dialers present Chrome's TLS ClientHello instead of Go's on new connections, live and without a restart, with `URNETWORK_TLS_HELLO` as the startup default. It affects new connections only: an open session keeps the handshake it made and follows the setting the next time it dials. The Chrome hello is **off by default** while it soaks, so a box that never sets the key keeps Go's hello exactly as before; a persisted `off` beats `URNETWORK_TLS_HELLO=on`, and clearing the key hands the decision back to the environment. The provider logs `[control] applied tls_hello=<v> (was <old>)` on each change. A fingerprint drift harness gates the dialers' hellos in CI.
-- **Smaller subsystems ported with the extender stack** ([#289](https://github.com/full-bars/meso-miner/pull/289)): the blocker gate in the packet path (the host lookup runs only after an IP miss, with IPv6, UDP, mid-connection and setter-race tests), an opt-in blocklist generator, lag messages and naming, contract and path discovery metrics, a control-result and wallet-mapping API, and four dataplane leaves: egress TTL realism (inactive at the zero mode), H3 datagram auth compatibility, request-scoped redirect, and DoH dial observation.
+- **Smaller subsystems ported with the extender stack** ([#289](https://github.com/full-bars/meso-miner/pull/289)): the blocker gate in the packet path (the host lookup runs only after an IP miss, with IPv6, UDP, mid-connection and setter-race tests), an opt-in blocklist generator, lag messages and naming, a control-result and wallet-mapping API, and four dataplane leaves: egress TTL realism (inactive at the zero mode), H3 datagram auth compatibility, request-scoped redirect, and DoH dial observation.
 - **`urnet-tools proxy trim` with no count reports the cap** ([#282](https://github.com/full-bars/meso-miner/pull/282), [#284](https://github.com/full-bars/meso-miner/pull/284)): it prints the cap in force and its source, the configured pool before the cap, how many proxies the cap holds back, and the running counts. `urnet-tools status` carries the same as a `trim` row on the live block whenever a cap applies, and `status --json` gains `configured`, `trim_cap`, `trim_cap_source` and `trim_reported` in the `proxies` block. The cap is read from the provider snapshot first, so an unreadable `proxy_trim` file cannot hide a cap the provider is enforcing; the file is used when the provider is stopped or predates the fields. The reload records the selection only when `proxy_url.json` was readable, so an unreadable cache cannot understate the pool.
 - **The lifetime counters carry the date they began** ([#285](https://github.com/full-bars/meso-miner/pull/285), [#287](https://github.com/full-bars/meso-miner/pull/287)): the `[lifetime]` and `[pqe]` all-time lines and the `since-start` figures now print their start, and `/metrics` exports `urnet_lifetime_start_timestamp_seconds` and `urnet_lifetime_start_approximate`. A store written before this change keeps its totals and is pinned to its load time, flagged approximate, with the wording `start approximate, totals include earlier history`.
 
@@ -14,12 +64,7 @@ Everything merged after `v2026.10.24-1080497440-meso`.
 
 - **The smart dialer costs nothing while it is off, and is now restart-required** ([#297](https://github.com/full-bars/meso-miner/pull/297)): the off state still cost a goroutine, a context and a timer per proxy, so a node with thousands of proxies carried thousands of idle goroutines. The start function is gated, so while the preference is off there is none. Because the loop only exists when the preference was on at start, `smart_dialer` is reclassified restart-required: `set smart_dialer on` is persisted and takes effect at the next start, the CLI says so, and `set` prints the same "takes effect at the next start" wording for `profile` and `ramlogs`, which never applied live. The default is unchanged: off.
 - **The disk benchmark samples by time, not a fixed 16 MiB** ([#300](https://github.com/full-bars/meso-miner/pull/300)): the benchmark stopped at a fixed 16 MiB, which an NVMe writes in about 20 ms, so the rate reported at startup and in `urnet_disk_*` was a burst figure that moved between runs. The 3 s budget now governs, up to 256 MiB: microSD is unchanged at about 20 MiB, eMMC samples about 240 MiB, NVMe the 256 MiB ceiling in about 85 ms. The result carries its duration, so the log reads `900.0 MB/s (256 MB written in 85 ms)`. The container guard, IO-pressure skip, space cap, per-device cache and hung-write watchdog are unchanged.
-- **Windows proxy paste shows the prompt and names the right end-of-input key.** A Windows console uses Ctrl+Z followed by Enter, while a Git Bash or MSYS pty uses Ctrl+D; the prompt now appears in a Windows pty when `TERM` is set, without making Unix scripted input interactive. (eaaf3875, 746392a3, 4ffe8a4a)
-- **The CFAA and IP blocker tables refreshed.** The current tables contain 48,764 IPv4 ranges and 539 IPv6 ranges, plus 164,781 blocked hostnames, up from 41,202, 593 and 163,972 at the previous release tag. Data only; the update takes effect when a node runs a release with these tables. (8004c71f)
-
-### Removed
-
-- **The workstation flag is removed from `urnet-tools`** (49a31d42, 6c90f970): the flag could skip the browser sign-form gate and the seed-file guard, so signing now has no gate, and seed use asks a person or refuses, with no bypass. A script that still passes `--i-am-on-my-own-workstation` gets a sentence naming the removed flag, not a provider parse error.
+- **The CFAA and IP blocker tables refreshed** ([#275](https://github.com/full-bars/meso-miner/pull/275)): 46,733 to 47,632 IPv4 entries and 597 to 619 IPv6 entries, with blocked hosts moving from 164,212 to 164,225. Data only; it takes effect once a node runs this release.
 
 ### Fixed
 
@@ -34,30 +79,16 @@ Everything merged after `v2026.10.24-1080497440-meso`.
 - **The FreeBSD installer gets three fixes** ([#292](https://github.com/full-bars/meso-miner/pull/292)): a symlinked home or state directory is refused before the download, a binary that is not a non-empty executable is refused before it replaces a working one, and the release tag no longer needs python3 (jq, then python3, then a sed extraction).
 - **A hotkey wallet write reported failure on Windows** ([#293](https://github.com/full-bars/meso-miner/pull/293)): after the rename the write flushed the parent directory, which Windows answers with access denied, so a write that had landed was reported failed. The flush goes through `internal/durablesync`, which absorbs only the errnos that mean the platform has no directory flush. Unix keeps the same fsync.
 - **Extender review findings** ([#290](https://github.com/full-bars/meso-miner/pull/290)): the feed read deadline is set before the cancellation hook, a zero connect timeout stays unbounded on the HTTP/3 carrier and now aborts when the context ends, issued-key pruning runs only on an epoch change, retired servers' counts fold into the cumulative counters once, and VLESS response-header parsing can resume after a read timeout without losing the payload.
-- **A URL proxy fetch failure keeps its cause in the important log.** The cycle headline only counts failed sources; the retained detail line records the URL-free error beside the redacted source label, so the reason remains available after the main RAM log rolls over. (a48c7ca7)
-- **The proxy-quality reaper names both reasons it is held.** Its log now distinguishes a recent backend outage from a degraded set that has no ranking to cull by, and the resume line confirms both conditions have cleared. (f9057cee)
-- **Docker startup keeps the saved proxy config when an import fails** (2326c8c8, ff69bf59, 6f1d7687, a4e57efe, 56104b33, 2567b218): the echoed address is trimmed before redaction matching, the staging sweep spares a live directory, and staged imports stay away from live state, so a failed or missing input leaves the saved config untouched. Corrupt saved state is kept for recovery and no longer blocks startup, startup stops only when no usable config is saved, and a failed import no longer aborts the container. The nightly image updates its binary before the proxy import.
-- **Docker debug logs redact credentials, and nightly starts reuse the stored JWT** (32489225, 1662af74, c5aa058a, 47785a9b, b92662ab): debug mode logs only whether each login value is set and its length, and auth output containing either value is redacted. Nightly starts validate and reuse a stored JWT as stable does, the IP checker runs only after a complete fetch, and the auth code reaches the binary as an argument instead of an empty one.
-- **Provider proxy state changes hold the proxy lock** (5a93487d, 1510520d, d01c7df6, 921b9999): startup state writes, `proxy remove --all` and the removal of an excluded match take the lock for the whole change, so a concurrent clear or background URL refresh cannot overwrite it or merge a removed address back in. An unreadable `proxy.state` is reported rather than masked, and a file proxy add keeps the source file's owner and mode.
-- **Provider logs redact malformed addresses and raw keys** (1e915804): identity keys, claim lines and JWT-store lines go through one display helper, and a malformed address no longer prints unredacted.
-- **Shutdown no longer waits behind a queued reload** (b98aa755): the reloader is signaled to stop when the run ends, so a reload waiting for its slot aborts at once and the in-flight reload is quiesced before exit.
-- **A changed preset API URL triggers the stale JWT warning** (96a61b1e): the URL is compared before the config is saved, so the warning fires when the URL changes.
-- **FreeBSD provider discovery and cron use the root-owned copy** (cffea783, 36ac726c, 03b529c0, e09861b2): the provider is found in the root-owned libexec tree and must be an executable file, root cron runs the staged copy and refuses a binary it cannot replace, process scans match the service user rather than the exact binary path, and the installer stays out of the working directory.
-- **`urnet-tools` on macOS and `logs --important` follow the release layout** (b556feb1, 14f79bc6): the darwin path is taken from the universal tarball, and `logs --important` follows the newer of the disk or RAM log across rotation.
-- **The contract log line separates the proxy tag from the verb** (8bc5672e, in `connect`): a vertical bar sits between them in the acquired, denied, closed and checkpointed lines, so they no longer read as one phrase.
-- **RAM-log trimming no longer holds the writer lock during the copy.** It builds the kept tail in a unique sibling file, replaces the old file, and retries the descriptor swap if reopening fails. Follow hints use `tail -F` so readers reopen after the rename. (9b7ea765, 6e84da18, a5b5249b)
 
 ### Security
 
 - **The FreeBSD installer no longer writes through a symlinked shell rc** ([#295](https://github.com/full-bars/meso-miner/pull/295)): the installer runs as root and appends a PATH line to a file in a directory the service user owns, and both the append and the `chown` followed a symlink. A symlinked rc is now refused with a warning and the install carries on. A real file is rebuilt in a `mktemp` file beside it, keeps its mode, and is renamed into place.
-- **The FreeBSD installer refuses an asset whose digest cannot be established** (a1d5dcb1): an asset that cannot be checked against a digest is not installed.
 
 ### CI
 
 - **The scheduled live-numbers commits are signed** ([#286](https://github.com/full-bars/meso-miner/pull/286)): the hourly job committed without a signing key, so every refresh landed unsigned. It now imports a dedicated signing key from the `CI_GPG_PRIVATE_KEY` secret, signs both commits, runs `git verify-commit` before each push, and stops when the secret is missing or a commit is unsigned. The key expires on 2027-10-23, at which point the job fails loudly.
 - **The installer shell-rc symlink test runs in CI** ([#299](https://github.com/full-bars/meso-miner/pull/299)): `scripts/test_provider_install_shellrc_symlink.sh` never ran in CI. It now runs with full history, and fails, not skips, when its falsification pin is missing under `REQUIRE_FALSIFICATION`, so a shallow checkout cannot turn it into a silent pass.
 - **The live-numbers script and workflow are updated** ([#276](https://github.com/full-bars/meso-miner/pull/276), [#277](https://github.com/full-bars/meso-miner/pull/277)): the page carries the time the numbers were read, the RPC retry also catches read-phase resets and short reads, the price lookup logs each failing source and retries both with backoff, and the wiki mirror runs on every refresh.
-- **Four CI jobs change scope** (680491bd, 1f1407f1, 8787d74e, 74fa3420, 64834a42): the FreeBSD job runs the provider wallet and IP-layer test groups, the OpenRC smoke reads with a read-only token and keeps no checkout credentials, the shakedown gets the budget it measurably needs, and the wiki sync strips code blocks before it checks relative links and publishes the root log reference.
 
 ### Documentation
 
@@ -65,61 +96,47 @@ Everything merged after `v2026.10.24-1080497440-meso`.
 - **Wiki links open the wiki page** ([#280](https://github.com/full-bars/meso-miner/pull/280)): links carried a `.md` suffix and redirected to raw markdown. In-wiki links now point at the wiki pages and repo-relative targets at blob URLs.
 - **The Docker wrapper is labelled optional but recommended** ([#283](https://github.com/full-bars/meso-miner/pull/283)).
 - **The v2026.10.22 release notes were corrected** ([#274](https://github.com/full-bars/meso-miner/pull/274), [#279](https://github.com/full-bars/meso-miner/pull/279), [#281](https://github.com/full-bars/meso-miner/pull/281)): duplicated sections merged, the previous release named, and the stop caveat now cites the container stop harness and the shakedown's X3 check.
+- **Release notes for this release** ([#303](https://github.com/full-bars/meso-miner/pull/303)).
 
-## [v2026.10.24-1080497440-meso] — 2026-10-24
-
-### Added
-
-- **Extender v2 library, serving-role wiring and VLESS/Reality carrier** ([#39](https://github.com/urfoundation/meso-miner/pull/39)): the extender v2 library, with its signed records, directory, feed and gossip paths and TCP, QUIC and DNS carriers, is ported in, and the provider has wiring to serve the extender role through its direct slot. That role is opt-in and is not verified in production; it does not activate in production. The same port adds a VLESS/Reality client carrier.
-- **The proxy trim cap is visible in status** ([#33](https://github.com/urfoundation/meso-miner/pull/33)): `urnet-tools proxy trim` and the live status block report the effective cap and its source.
-
-### Fixed
-
-- **H3 traffic now counts against the governor's byte and attempt budgets** (`dd32fd946`): QUIC dial bytes are charged, H3 waiters no longer inherit the parked flag, and transport classification does not rely on unavailable H3 stats.
-- **The disk benchmark uses a bounded time sample** ([#51](https://github.com/urfoundation/meso-miner/pull/51)): it samples for a fixed interval instead of reporting a short burst and stores enough shape data to decide when a new sample is needed.
-- **OOM-cap decisions preserve the last written state** ([#52](https://github.com/urfoundation/meso-miner/pull/52), [#53](https://github.com/urfoundation/meso-miner/pull/53), [#54](https://github.com/urfoundation/meso-miner/pull/54)): a failed write is reported and cannot advance the persisted cap timeline.
-
-### Security
-
-- **The FreeBSD installer refuses shell-rc symlinks and unsafe paths** ([#46](https://github.com/urfoundation/meso-miner/pull/46), [#47](https://github.com/urfoundation/meso-miner/pull/47), [#48](https://github.com/urfoundation/meso-miner/pull/48)): root no longer follows a service user's shell-rc link, and installer path changes are checked before writing.
-- **A Windows hotkey-wallet write is not reported failed after it lands** ([#45](https://github.com/urfoundation/meso-miner/pull/45)): directory syncing uses the platform-aware durable-sync helper.
-
-### CI
-
-- **Installer shell-rc checks run in CI** ([#50](https://github.com/urfoundation/meso-miner/pull/50)): the symlink test runs alongside the installer checks.
-
-## [v2026.10.22-1078667370-meso] — 2026-10-22
+## [v2026.10.22-1078651310-meso] — 2026-10-22
 
 ### Added
 
-- **PQE handshake stages and negotiated curves** ([#259](https://github.com/full-bars/meso-miner/pull/259), [#261](https://github.com/full-bars/meso-miner/pull/261)): the `[pqe]` line reports `attempts`, `tls_ok`, `verified` and `identity_failed`, plus a per-curve histogram. `/metrics` carries `urnet_sessions_handshake_total{stage=...}` and `urnet_sessions_curve_total{curve=...}`, and two dashboard panels show both rates.
+- **Cumulative monitoring counters survive restarts and handoffs** ([#236](https://github.com/full-bars/meso-miner/pull/236), [#240](https://github.com/full-bars/meso-miner/pull/240), [#241](https://github.com/full-bars/meso-miner/pull/241)): monotonic `/metrics` totals are restored before the listener serves, retained across proxy churn and flushed by the HotSwap parent before it exits. Process-start data lets dashboards avoid reading a restored total as a traffic spike.
+- **PQE handshake stages and negotiated curves are exposed** ([#259](https://github.com/full-bars/meso-miner/pull/259), [#261](https://github.com/full-bars/meso-miner/pull/261)): the log and `/metrics` distinguish attempts, completed TLS, verified identities and identity failures, and report the negotiated curve. The `[pqe]` line reports `attempts`, `tls_ok`, `verified` and `identity_failed` with a per-curve histogram, `/metrics` carries `urnet_sessions_handshake_total{stage=...}` and `urnet_sessions_curve_total{curve=...}`, and Grafana gains panels for both series.
 
 ### Fixed
 
-- **A `docker stop` skipped the shutdown path** ([#258](https://github.com/full-bars/meso-miner/pull/258)): a shell as PID 1 has no default action for SIGTERM, so the provider never heard the stop and Docker SIGKILLed the container at the grace timeout. The supervisor forwards the signal and waits for the successor.
-- **The nightly updater could pick another platform's tarball** ([#258](https://github.com/full-bars/meso-miner/pull/258)): the asset is now matched against this architecture.
+- **`docker stop` now reaches the provider** ([#258](https://github.com/full-bars/meso-miner/pull/258)): a shell as PID 1 has no default action for SIGTERM, so the provider never heard the stop and Docker SIGKILLed the container at the grace timeout. The supervisor now forwards termination signals and waits for a HotSwap successor.
+- **The updater selects a stable asset for this platform** ([#258](https://github.com/full-bars/meso-miner/pull/258)): the nightly updater could pick another platform's tarball; asset selection now matches the operating system and architecture, and stable-release lookup no longer stalls on a docs-only or unflagged release.
+- **The exported DoH failure counter no longer resets on scrape** ([#236](https://github.com/full-bars/meso-miner/pull/236)): the scrape now reads a cumulative total while the health heartbeat keeps its interval count.
 - **A completed handshake could go uncounted** ([#259](https://github.com/full-bars/meso-miner/pull/259)): a superseded epoch returned before the count, and a failed identity proof could be counted by every concurrent verifier. Both count once now.
 - **Lifetime session counters dropped on proxy exit** ([#261](https://github.com/full-bars/meso-miner/pull/261)): a `_total` could decrease and `rate()` read it as a reset. A departing manager's counts fold into a provider-wide accumulator first.
 - **The deny-list drift guard matched a literal pipe** ([#263](https://github.com/full-bars/meso-miner/pull/263)): it now matches the old inline list as a fixed string.
 
+### Removed
+
+- **The retired hub's reporting commands and settings** ([#245](https://github.com/full-bars/meso-miner/pull/245)): bandwidth and heartbeat reporters, their CLI commands and configuration keys are gone; existing saved report URLs are ignored so old state still loads.
+
 ### Security
 
-- **The CFAA and IP blocker tables refreshed** ([#265](https://github.com/full-bars/meso-miner/pull/265)): 41,202 to 46,733 IPv4 entries and 593 to 597 IPv6 entries, with blocked hosts moving from 163,972 to 164,212. Data only.
-- **The IP blocker table syncs with CFAA** ([#262](https://github.com/full-bars/meso-miner/pull/262)): the scheduled job pulled one file, so the blocker table drifted unseen. Both files sync now, and a check fails on drift.
+- **Go 1.27.3 is required for release builds** ([#238](https://github.com/full-bars/meso-miner/pull/238)): the toolchain includes the certificate-verifier fix for the compromised eMudhra intermediates; already-built binaries need a rebuild to pick it up.
+- **The CFAA and IP blocker tables were refreshed together** ([#235](https://github.com/full-bars/meso-miner/pull/235), [#252](https://github.com/full-bars/meso-miner/pull/252), [#265](https://github.com/full-bars/meso-miner/pull/265)): the final sync carries 46,733 IPv4 and 597 IPv6 CFAA entries and 164,212 blocked hosts, up from 41,202 IPv4 entries, 593 IPv6 entries and 163,972 blocked hosts. Data only. The scheduled job pulled one file, so the blocker table drifted unseen; both generated tables now sync, and a check fails on drift ([#262](https://github.com/full-bars/meso-miner/pull/262)).
 
 ### CI
 
-- **The soak and smoke client-id reuse checks restart the provider** ([#270](https://github.com/full-bars/meso-miner/pull/270), [#272](https://github.com/full-bars/meso-miner/pull/272)): both ran `urnet-tools hot-restart -f`, which is not a command, and the trailing `|| echo` turned the failure into a pass. They now terminate the provider, start it from the same state directory, compare the ids from `urnet-tools proxy ids`, and fail when a slot's id changed.
+- **The installer matrix gates publication**: the real installer runs against a fake release on four distributions, and the release waits for that tier.
+- **The artifact scan reports incomplete coverage** ([#237](https://github.com/full-bars/meso-miner/pull/237)): the scanner retries rate limits, handles large artifacts and reports a per-file error instead of a false pass when a scan is incomplete.
+- **Restart checks now restart the provider and compare identities** ([#270](https://github.com/full-bars/meso-miner/pull/270), [#272](https://github.com/full-bars/meso-miner/pull/272)): soak and smoke tests use the same state directory and fail if a proxy identity changes. They used to run `urnet-tools hot-restart -f`, which is not a command, and the trailing `|| echo` turned that failure into a pass. They now terminate the provider, start it from the same state directory, compare the ids from `urnet-tools proxy ids`, and fail when a slot's id changed.
 
 ### Documentation
 
-- **SN25 costs on the Bittensor pages come from the chain** ([#256](https://github.com/full-bars/meso-miner/pull/256)): the head-tier and quick-start pages show a live cost snapshot with the time it was taken and a link to the live copy, refreshed hourly by a scheduled job.
-- **A Hot-Restart page, and the dead toggle command fixed** ([#268](https://github.com/full-bars/meso-miner/pull/268), [#269](https://github.com/full-bars/meso-miner/pull/269), [#271](https://github.com/full-bars/meso-miner/pull/271)): `docs/Hot-Restart.md` covers client identity reuse, and the docs now use `urnet-tools set` for the toggle instead of `hot-restart on`, which does not exist.
-- **Four Bittensor claims are corrected** ([#260](https://github.com/full-bars/meso-miner/pull/260)): the v1 and v2 claim triggers, the quoted challenge message, the stopped-daemon caveat for unsigned v1 claims, and the consent scope.
+- **Bittensor operator guidance was refreshed** ([#239](https://github.com/full-bars/meso-miner/pull/239), [#249](https://github.com/full-bars/meso-miner/pull/249), [#251](https://github.com/full-bars/meso-miner/pull/251), [#260](https://github.com/full-bars/meso-miner/pull/260)): the quick start, head-tier and operations pages clarify claim versions, consent scope and current rollout caveats. The v1 and v2 claim triggers, the quoted challenge message, the stopped-daemon caveat for unsigned v1 claims and the consent scope are corrected in #260.
+- **Live SN25 costs and Hot-Restart behavior are documented** ([#256](https://github.com/full-bars/meso-miner/pull/256), [#268](https://github.com/full-bars/meso-miner/pull/268), [#269](https://github.com/full-bars/meso-miner/pull/269), [#271](https://github.com/full-bars/meso-miner/pull/271)): the head-tier and quick-start pages show a live cost snapshot with the time it was taken and a link to the live copy, refreshed hourly by a scheduled job. The new guide explains client identity reuse and the supported toggle command; the docs now use `urnet-tools set` for the toggle instead of `hot-restart on`, which does not exist.
 - **The v2026.10.21 changes are documented where operators look** ([#253](https://github.com/full-bars/meso-miner/pull/253)): `FORK_CHANGES.md`, `LOG_REFERENCE.md`, the HotSwap page and the install docs now carry the counter persistence, the swap behaviour and the install detail.
 - **Release notes for this release** ([#264](https://github.com/full-bars/meso-miner/pull/264), [#267](https://github.com/full-bars/meso-miner/pull/267), [#273](https://github.com/full-bars/meso-miner/pull/273)).
 
-## [v2026.10.21-1077734740-meso] — 2026-10-21
+## [v2026.10.21-1077734740-meso] — 2026-10-21 (`urfoundation/meso-miner` tag)
 
 ### Added
 - **Cumulative metrics counters persist across restarts**: the counters behind `/metrics` (`urnet_*_total`) are stored in `~/.urnetwork/metrics_counters.json` and restored before the listener serves, so a restart, reboot or update no longer resets a 24-hour attribution window to zero. The store is separate from `lifetime_metrics.json`; writes are atomic, every 45 seconds and on shutdown, and skipped when nothing changed. The bundled dashboard gates its rate panels for one window after a start-time change so a restored total is not read as a spike.
@@ -203,7 +220,7 @@ Everything merged after `v2026.10.24-1080497440-meso`.
 
 ---
 
-## [v2026.10.19-1075696970-meso] — 2026-10-19 (`full-bars/meso` tag)
+## [v2026.10.19-1075696970-meso] — 2026-10-19
 
 ### Added
 
@@ -239,7 +256,7 @@ Everything merged after `v2026.10.24-1080497440-meso`.
 
 ---
 
-## [v2026.10.6-1064547980-meso] — 2026-10-06 (`full-bars/meso` tag)
+## [v2026.10.6-1064547980-meso] — 2026-10-06
 
 ### Added
 
@@ -314,7 +331,7 @@ Everything merged after `v2026.10.24-1080497440-meso`.
 
 ---
 
-## [v2026.9.22-1052862940-meso] — 2026-09-22 (`full-bars/meso` tag; same name also on `full-bars/sn`)
+## [v2026.9.22-1052862940-meso] — 2026-09-22
 
 ### Fixed
 
@@ -327,7 +344,7 @@ Everything merged after `v2026.10.24-1080497440-meso`.
 
 ---
 
-## [v2026.09.21-1790052822-meso] — 2026-09-22
+## [v2026.09.21-1790052822-meso] — 2026-09-22 (tag belongs to `full-bars/sn`; the work below is meso's)
 
 ### Added
 
@@ -378,7 +395,7 @@ Everything merged after `v2026.10.24-1080497440-meso`.
 
 ---
 
-## [v2026.9.18-1049118720-meso] — 2026-09-18 (`full-bars/meso` tag; same name also on `full-bars/sn`)
+## [v2026.9.18-1049118720-meso] — 2026-09-18
 
 ### Added
 - **Full parity port (PR #92, #93, #94)**: provider runtime (zero-downtime HotSwap, UNIX control socket with live overrides, Prometheus `/metrics` endpoint, dynamic state overrides, earnings-aware proxy prioritization, audit ring buffer, systemd `Type=notify`), the complete urnet-tools CLI (`config`, `hotswap`, `history`, `lifecycle`, `metrics`, `profile`, `proxy_ids`, `ramlogs`, `dashboard`), all fork test suites, and the Prometheus/Grafana monitoring bundle.
@@ -392,15 +409,46 @@ Everything merged after `v2026.10.24-1080497440-meso`.
 
 ---
 
-## [v2026.9.9-1788916951-meso] — 2026-09-09 (`full-bars/meso` tag)
+## [v2026.9.9-1788917009-meso-hub] — 2026-09-08 (hub variant)
+
+The hub-carrying build of the parity port in `v2026.9.9-1788916951-meso`. Its own commits, on top of the 3.23-fix v30.9 port (`518d454c`), are below. Commits are cited because this line's PR numbers do not cover them.
+
+### Added
+
+- **Warm-client proxies start first** (`dc30abed`): proxies with a warm client id start ahead of the rest, with an accelerated stagger.
+- **Provider, `urnet-tools` and `urnet-docker` flags agree** (`c930259c`): the three share the flag set ported from 3.23-fix.
+
+### Fixed
+
+- **Dropped-item contracts settle before their sequence closes** (`b4cbef9e`).
+- **The SSRF guard covers hostname dial targets** (`5a542dab`).
+- **Refused-share forgiveness uses a saturating counter** (`88eb639a`), not a single bit.
+- **The usage graph** (`f3e6a2e5`, `8f3bad59`, `1e0223f7`): UTC truncation, every post-restart segment summed in a bucket, and flags honored after the `usage` subcommand.
+- **The paste signal handler is registered before plaintext credentials are written** (`381310b4`).
+- **The direct-toggle directory and file take the state directory owner** (`db9a03dd`).
+- **Startup validates the FHS PATH defaults and flushes retention events on exit** (`3020f790`).
+
+### Security
+
+- **CFAA blocklist synced from upstream** (`2838cc8b`, `bc992a24`, `8eb6e564`, `05e5b135`): the last sync in the tag carries 43,479 IPv4 and 438 IPv6 entries.
+
+---
+
+## [v2026.9.9-1788916951-meso] — 2026-09-09
 
 Full parity with the 3.23-fix v30.9 line: warm proxy prioritization, `sn-status`, and security hardening. The same code was also published as `v2026.9.9-1788917009-meso-hub`, a variant that kept the old hub; the hub has since been removed.
 
 ---
 
-## [v2026.8.28-1031582360-meso] — 2026-08-28 (`full-bars/meso` tag)
+## [v2026.8.28-1031582360-meso] — 2026-08-28
 
-Fixes the endless retry loop on dead proxies, makes Docker self-update fetch from this repository, and adds Pelican egg support. Two earlier builds the same day, `v2026.8.28-1031544720-meso` and `v2026.8.28-1031579830-meso`, carry the same release notes. See `releases/v2026.8.28-1031582360-meso.md`.
+Fixes the endless retry loop on dead proxies, makes Docker self-update fetch from this repository, and adds Pelican egg support. The earlier build of the same day, `v2026.8.28-1031544720-meso`, has the same code (its own section follows). See `releases/v2026.8.28-1031582360-meso.md`.
+
+---
+
+## [v2026.8.28-1031544720-meso] — 2026-08-28
+
+The first tag of 2026-08-28. Its code is identical to `v2026.8.28-1031582360-meso`: the only later commits touch `.github/` and `releases/`. `f6697a6e` limits the VirusTotal scan to the six provider binaries, `20887cff` signs release tags with a dedicated GPG key, and `b662cedd` sets the signing key for `git tag -s`. The release notes are `releases/v2026.8.28-1031544720-meso.md`.
 
 ---
 

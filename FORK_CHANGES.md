@@ -3,14 +3,14 @@
 This document tracks all modifications made to the upstream URNetwork v3.23 codebase in this fork. Use this as a reference when rebasing to newer upstream versions.
 
 **Fork Based On**: urnetwork/connect v3.23  
-**Repository**: github.com/urfoundation/meso-miner  
+**Repository**: github.com/full-bars/meso-miner  
 **Current Version**: v2026.10.24-1080497440-meso
 
 ---
 
 ## Inherited from urnetwork-3.23-fix (carried by the parity port)
 
-Sections 1 through 165 are inherited history from `urfoundation/meso-miner`, carried over by the parity port. They are recorded here for rebase reference and are not meso-miner changes. The meso-miner parity work begins at section 166.
+Sections 1 through 165 are inherited history from `full-bars/urnetwork-3.23-fix`, carried over by the parity port. They are recorded here for rebase reference and are not meso-miner changes. The meso-miner parity work begins at section 166.
 
 ---
 
@@ -105,7 +105,7 @@ InitialContractTransferByteCount: 16 KiB → 2 MiB (fork default)
   - `BUILD`: selects startup script
   - `USER_AUTH`, `PASSWORD`: credential-based auth
   - `ENABLE_VNSTAT`, `ENABLE_IP_CHECKER`: optional monitoring
-- **Multi-arch Push**: Builds and pushes `ghcr.io/urfoundation/meso-miner:latest` for both amd64 and arm64
+- **Multi-arch Push**: Builds and pushes `ghcr.io/full-bars/urnetwork-3.23-fix:latest` for both amd64 and arm64
 
 **How to Identify in New Upstream**:
 - Check if upstream provides `Dockerfile` (unlikely — 3.23 may not have it)
@@ -2105,7 +2105,7 @@ Zero added latency (still wakes on the next real notification) and structurally 
 
 **Purpose**:
 - `urnet-tools restart` always printed "cold restart required" regardless of actual hot-restart status — deduped the `hotRestartEnabled()` check into a shared cross-platform helper so the message reflects reality. The GitHub-rate-limit-resilient worker-download fallback (previously Linux-only) was also ported to macOS (`Provider_Install_Mac.sh`) and Windows (`urnet-tools.ps1`). Also fixed: a persisted `--tag` config silently overriding an explicitly-passed `--tag` flag on `hub update` (should be the reverse), and `hub update` on Docker resolving the *provider* image instead of the `-hub` image.
-- `urnet-tools hub install`/`hub update` on macOS and Windows now deploy the hub via Docker (`docker pull`/`run` against `ghcr.io/urfoundation/meso-miner-hub`) since neither platform has a native hub binary. Linux gets this as an opt-in `--docker` flag (native systemd remains the Linux default). All platforms share the same `urnetwork-hub` container name and `urnetwork-hubdata` volume.
+- `urnet-tools hub install`/`hub update` on macOS and Windows now deploy the hub via Docker (`docker pull`/`run` against `ghcr.io/full-bars/urnetwork-3.23-fix-hub`) since neither platform has a native hub binary. Linux gets this as an opt-in `--docker` flag (native systemd remains the Linux default). All platforms share the same `urnetwork-hub` container name and `urnetwork-hubdata` volume.
 
 **Files Changed**: `hub/onboard.go`, `scripts/Provider_Install_Linux.sh`, `scripts/Provider_Install_Mac.sh`, `scripts/Provider_Install_Win32.ps1`, `scripts/urnet-tools.ps1`, `docker/scripts/urnet-tools.sh`, `docs/Hub-Setup.md`
 
@@ -2993,7 +2993,7 @@ Deliberately NOT resetting `everUp`/`downSince` in `RegisterProxy` — that woul
 **Files Modified**: `.github/workflows/build.yml`, `docker/scripts/start_nightly.sh`, `docker/scripts/urnet-tools.sh`, `docker/scripts/test_pelican_smoke.sh`, `docker/scripts/test_pelican_gates.sh` (new), `pelican/README.md` (new), `pelican/egg-urnetwork-323fix.json` (new).
 
 **Change**:
-- **`pelican/egg-urnetwork-323fix.json`** — PLCN_v3 egg pointing at `ghcr.io/urfoundation/meso-miner:latest`. `BUILD` (stable/nightly/jwt) is user-editable; `USER_AUTH` user-editable; `PASSWORD` and `AUTHCODE` admin-only. `PELICAN=yes`, `ENABLE_VNSTAT=false`, and `ENABLE_IP_CHECKER=false` are hidden and non-editable in the egg — the image ships with the audit-preferred defaults pinned.
+- **`pelican/egg-urnetwork-323fix.json`** — PLCN_v3 egg pointing at `ghcr.io/full-bars/urnetwork-3.23-fix:latest`. `BUILD` (stable/nightly/jwt) is user-editable; `USER_AUTH` user-editable; `PASSWORD` and `AUTHCODE` admin-only. `PELICAN=yes`, `ENABLE_VNSTAT=false`, and `ENABLE_IP_CHECKER=false` are hidden and non-editable in the egg — the image ships with the audit-preferred defaults pinned.
 - **Runtime self-update disabled under `PELICAN=yes`**: `start_nightly.sh` short-circuits the update check (both the bootstrap and the daily watcher), and `urnet-tools update` exits 1 with a refusal message. Under a panel the published image is the single source of truth; a runtime fetch would silently swap the audited fork binary for whatever the release API serves mid-flight. Non-Pelican Docker deployments keep the #477 behavior unchanged.
 - **`docker/scripts/test_pelican_smoke.sh`** — boot smoke driving `pelican_panel.sh` against a fake provider binary. Empty credentials fail fast; jwt mode routes to `auth-provide` with the code; stable mode routes through the auth loop to `provide`.
 - **`docker/scripts/test_pelican_gates.sh`** — 15 behavioral gate tests (mutation-checked). `func_check_update` extracted from `start_nightly.sh` and exercised with stubbed `log/curl/wwt`: `PELICAN=yes` exits 0 with the disabled notice and zero network calls; `PELICAN` unset proceeds past the gate. `do_update` extracted from `urnet-tools.sh`: `PELICAN=yes` exits 1 with the refusal message and never reaches arch detection; unset proceeds. State-dir tests verify `proxy-health.sh` / `proxy-traffic.sh` resolve under `$HOME` and honor `URNETWORK_PROXY_HEALTH_DIR`. Egg-JSON invariants check non-empty rules arrays, known validator tokens, and unique env_variable/sort values.
@@ -3023,8 +3023,8 @@ Deliberately NOT resetting `everUp`/`downSince` in `RegisterProxy` — that woul
 **Files Modified**: `docker/scripts/start_nightly.sh`, `docker/scripts/start_update.sh`.
 
 **Change**:
-- `start_nightly.sh` updated to fetch from `urfoundation/meso-miner` releases instead of `urnetwork/build`.
-- `start_update.sh` updated to fetch from `urfoundation/meso-miner` instead of `urnetwork/connect` and `urnetwork/build`.
+- `start_nightly.sh` updated to fetch from `full-bars/urnetwork-3.23-fix` releases instead of `urnetwork/build`.
+- `start_update.sh` updated to fetch from `full-bars/urnetwork-3.23-fix` instead of `urnetwork/connect` and `urnetwork/build`.
 - Added digest verification: downloaded binaries are checked against expected SHA256 before swap.
 - Added `urnet-tools.sh` symlink fallback to `/app` for Pelican egg compatibility.
 
@@ -3453,7 +3453,7 @@ Deliberately NOT resetting `everUp`/`downSince` in `RegisterProxy` — that woul
 
 ## Meso-miner parity work (sections 166 onward)
 
-Sections 166 through 170 are meso-miner changes, not inherited from `urfoundation/meso-miner`.
+Sections 166 through 170 are meso-miner changes, not inherited from `full-bars/urnetwork-3.23-fix`.
 
 ## 166. Message-Pool Dial-Failure Buffer Fix (PR #126)
 
@@ -3571,7 +3571,7 @@ Brings meso-miner level with the 3.23-fix provider line for the fixes merged the
 - **The marker, cache, GOGC, baseline and trim fixes** (PR #145, #158): the OOM start marker is written in every mode and carries a random `start_id` so a HotSwap parent cannot overwrite its candidate's marker; a no-op update self-heals a missing `Type=` on the systemd unit; an unparseable `proxy_url.json` is moved aside to `proxy_url.json.corrupt` instead of skipping every merge cycle, and `proxy remove` on a file proxy applies again; the GC governor adopts the current GOGC while it is not tightening and never overrides an explicit `URNETWORK_BASELINE_GOGC`; the baseline start row records the version being replaced and the state reason; the URL launch line goes through the reload's deferred writer; and the trim applied line is written durably only when the cap changes or proxies are shed.
 - **The pool summary under-reported a slow steady leak and underflowed on a rollback** (PR #160): the sustained-growth gate applied the whole-window floor to a half window, which doubled the rate a leak had to reach, and a counter rollback underflowed the `uint64` interval into `0% reuse over 18 quintillion takes` forever. The gate now requires half the floor, and the interval re-seeds on a rollback.
 - **The Linux installer could download from the wrong fork** (PR #146): `do_install` carried a second copy of its whole body, so after a successful first pass the stale copy looked up the latest tag on the 3.23-fix repo and its mirror, and a fresh install could end with "Failed to download from both primary and mirror". The duplicate is removed, and the test harness pins the release lookup appearing once.
-- **`urnet-tools` updates resolved 3.23-fix tags** (PR #147): the release API and download URLs were hardcoded to `urfoundation/meso-miner`, so the update timer could replace the meso provider with a 3.23-fix build and `--tag v...-meso` returned 404. Every URL now goes through one release repo constant set to `urfoundation/meso-miner`.
+- **`urnet-tools` updates resolved 3.23-fix tags** (PR #147): the release API and download URLs were hardcoded to `full-bars/urnetwork-3.23-fix`, so the update timer could replace the meso provider with a 3.23-fix build and `--tag v...-meso` returned 404. Every URL now goes through one release repo constant set to `full-bars/meso-miner`.
 
 ### Tests and Docs
 
@@ -3583,7 +3583,7 @@ Brings meso-miner level with the 3.23-fix provider line for the fixes merged the
 
 ## 171. Combined TCP-Segment + TLS-Record Fragmentation Dialer (PR #183)
 
-Parity port of the `fragment+segment` dialer from `urfoundation/meso-miner` (PR #792; upstream `urnetwork/connect` commit `3fd67304`). `net_resilient.go` and `net_http.go` are sha256-identical to the 3.23-fix port; the combined test file matches it except the build-tag split below, which follows each repo's own test conventions.
+Parity port of the `fragment+segment` dialer from `full-bars/urnetwork-3.23-fix` (PR #792; upstream `urnetwork/connect` commit `3fd67304`). `net_resilient.go` and `net_http.go` are sha256-identical to the 3.23-fix port; the combined test file matches it except the build-tag split below, which follows each repo's own test conventions.
 
 - **The combined fragmentation dialer** (PR #183): the new `fragment+segment` dialer (priority 50, minimumWeight 0.25) cuts every fragmented ClientHello record a second time, across two TCP segments at an interior byte, so a reassembling middlebox that defeats either single method cannot stitch the hello (FOCI 2025). No raw sockets needed, so it works where the ttl technique cannot (non-root Android, iOS network extension, non-Linux). It registers beside the other resilient dialers behind `ExposeServerHostNames && ExposeServerIps`, fails closed exactly like the fragment path, and changes no existing dialer's behavior. The smart dialer picks it up generically.
 - **Direct connections only**: the dialer is not registered on proxied instances (`settings.ProxySettings != nil`), because behind a SOCKS proxy the proxy re-segments and the mode equals plain `fragment` while costing an extra dial per reconnect round. The segment cut is best effort on a direct socket too. Tests `TestClientStrategyDialersWithProxy` and `TestClientStrategyDialersDirect` pin the registered set.
@@ -3749,43 +3749,53 @@ Parity port of the `fragment+segment` dialer from `urfoundation/meso-miner` (PR 
 
 **Impact**: operators see the counters continue across a restart, a node that updates carries the certificate block, and a script that still calls a retired report command now fails. Nothing else changes provider traffic behaviour.
 
-## 179. v2026.10.22: Docker Stop Forwarding, Handshake Metrics and CFAA Sync
+---
 
-**Window**: `v2026.10.21-1077734740-meso` (`9623630e`) to `v2026.10.22-1078667370-meso` (`f5b50729`). Merges from full-bars PRs 253 and 258 to 265, and urfoundation PRs #12 to #28.
+## 179. v2026.10.22: Handshake Stage Metrics, `docker stop` Forwarding, Blocklist Sync
 
-**Purpose**: Make `docker stop` reach the provider, expose the handshake stages and negotiated curves, keep proxy-exit counters from stepping back, and keep the blocklist tables in step with the CFAA source.
+**Purpose**: Make the post-quantum handshake observable per stage and per curve, make `docker stop` reach the provider, and pick the stable release asset for the running platform. The window is `2ee56058` (v2026.10.20) to `469b6128` (v2026.10.22), 94 non-merge commits. The v2026.10.21 items in section 178 are not repeated.
 
-**Files Modified**: the Docker start, update and verify scripts under `docker/scripts/`, `pqe_tracker.go`, `provider/main.go`, `provider/metrics_provider.go`, `transfer_encrypt.go`, `monitoring/grafana/dashboards/urnetwork-providers.json`, `.github/workflows/cfaa-blocklist-sync.yml` and `.github/scripts/cfaa_sync.sh`.
+**Files Modified** (code and scripts, subset): `pqe_tracker.go`, `transfer_encrypt.go`, `provider/metrics_provider.go`, `provider/control_socket.go`, `provider/main.go`, `docker/scripts/provider_common.sh`, `ip_security_cfaa_block.go`, `ip_blocker_block.go`, `monitoring/grafana/dashboards/urnetwork-providers.json`.
 
-**Change**:
-- **Container stop reaches the provider** (full-bars PR 258, urfoundation #16): the start scripts trap `TERM` and `INT` and forward them, and the provider runs in the background so the trap can fire. The shell that runs as PID 1 has no default SIGTERM action, so before this change Docker sent SIGKILL at the grace timeout.
-- **The updater picks this architecture's asset first** (full-bars PR 258, urfoundation #17): the update path matches the container's architecture before it chooses a provider asset.
-- **Handshake stages and curves** (full-bars PRs 259 and 261, urfoundation #12 to #14): the PQE tracker counts attempts, TLS completions, verified sessions and identity failures, with a per-curve histogram. `/metrics` exports `urnet_sessions_handshake_total{stage=...}` and `urnet_sessions_curve_total{curve=...}`, and the dashboard carries both rates.
-- **Proxy-exit counters stay monotonic** (full-bars PR 261, urfoundation #14): a proxy's counts fold into a provider-wide accumulator before its manager is dropped, so a `_total` does not decrease when a proxy exits.
-- **Deny-list drift guard** (full-bars PR 263): the guard matches the deny-list as a fixed string, so a reintroduced inline list in another spelling fails.
-- **CFAA sync covers both tables** (full-bars PRs 262 and 265): the scheduled job syncs the IP blocker table and the CFAA prefixes, and a check fails on drift.
-- **Bittensor and stage documentation** (full-bars PRs 253 and 260, urfoundation #15, #22 and #23).
-
-**Impact**: operators see `docker stop` end with the provider's own exit, and the handshake breakdown on `/metrics` and the dashboard.
-
-## 180. v2026.10.24: Extender v2 Library Port (Serving Role Unproven), Trim Status and Lifetime Start Dates
-
-**Window**: `v2026.10.22-1078667370-meso` (`f5b50729`) to `v2026.10.24-1080497440-meso` (`d43ca1ff`). Merges from urfoundation PRs #21 and #29 to #55, including the 3.23-fix extender port as urfoundation #39. Full-bars changes merged after this tag (full-bars PRs 267 to 307 and later) are not in this window; they are listed under `CHANGELOG.md` `[Unreleased]`.
-
-**Purpose**: Port the 3.23-fix extender v2 library, with its gossip, fingerprint and record support, show the proxy trim cap in status, date the lifetime counters, and fix the operator-facing defects in this line's installer, warm-up, thrash-exit, OOM-cap, disk-benchmark, PSI and Windows hotkey-write paths.
-
-**Files Modified**: `extender/` (the serving library), `gossip/`, `fingerprint/`, `extenderrole/role.go`, `extender_record.go`, `provider/extender_role.go`, `internal/urnettools/proxy_trim_status.go`, `internal/durablesync/`, `hotkeywallet/store.go`, `api_control_result.go`, `api_wallet_mapping.go`, `api_auth_observation.go`, `go.mod`, `LOG_REFERENCE.md`, `docs/Configuration.md`, `docs/Troubleshooting.md` and `docs/Proxy-Management.md`.
+**Files Added**: `docker/scripts/test_stop_forwarding.sh`, `docker/scripts/test_login_exit_code.sh`.
 
 **Change**:
-- **Extender v2 library ported** (urfoundation #39, with review follow-ups #40 to #43): the library in `extender/`, the feed and gossip layer in `gossip/`, signed records in `extender_record.go` and `extenderrole/`, and the ClientHello and QUIC Initial drift harness in `fingerprint/` come from 3.23-fix.
-- **The serving role is wiring, not a verified service**: `provider/extender_role.go` is opt-in with `URNETWORK_EXTENDER` and forwards are limited to `URNETWORK_EXTENDER_ALLOWED_HOSTS`. The role is not verified in production and does not activate in production. The file header says it does not implement activation, the directory, gossip or probes.
-- **Switchable Chrome ClientHello** (urfoundation #39): `urnet-tools set tls-hello on|off` applies to new connections, and the default is off.
-- **Proxy trim cap in status** (urfoundation #33 and #35): `urnet-tools proxy trim` with no count reports the cap, its source and the proxies it holds back, and `urnet-tools status` carries a `trim` row.
-- **Lifetime counters are dated** (urfoundation #36 and #38): the store persists a `since` stamp once, and `/metrics` exports `urnet_lifetime_start_timestamp_seconds` and `urnet_lifetime_start_approximate`.
-- **Warm-up hold bounded** (urfoundation #37): the URL warm-up hold ends five minutes after process start.
-- **Disk benchmark samples by time** (urfoundation #51 and #53): the cache entry records its sampling shape, so an older entry is not reused.
-- **OOM-cap state write is reported** (urfoundation #52 and #54), and a thrash exit 75 is marked as planned (urfoundation #49).
-- **PSI and Windows hotkey writes** (urfoundation #44 and #45): the memory PSI resource is read, and the directory flush goes through `internal/durablesync`.
-- **Installer hardening and CI** (urfoundation #46 to #48 and #50): a symlinked shell rc is refused, path changes are checked before writing, and the shell-rc symlink test runs in CI.
+- **The handshake is counted per stage and per curve** (PRs #259, #261): the `[pqe]` line reports attempts, completed TLS, verified identities, identity failures and a per-curve histogram. `/metrics` exports `urnet_sessions_handshake_total{stage}` and `urnet_sessions_curve_total{curve}`, and the bundled dashboard gains two panels. A superseded epoch and concurrent verifiers no longer skip or double a count (#259).
+- **Lifetime session counters do not fall when a proxy exits** (PR #261): a departing manager's counts fold into a provider-wide accumulator first, so `rate()` does not read a decrease as a reset.
+- **`docker stop` reaches the provider** (PR #258): a shell as PID 1 ignores SIGTERM, so Docker used to SIGKILL the container at its grace timeout. The supervisor now forwards the signal and waits for a HotSwap successor. `docker/scripts/test_stop_forwarding.sh` covers it.
+- **The updater selects an asset for this platform** (PR #258): the nightly path could take another platform's tarball, and stable lookup stalled on a docs-only release. Selection now matches operating system and architecture.
+- **The blocklists sync together and drift is checked** (PRs #262, #265, #235, #252): the blocker table syncs with the CFAA file, and the scheduled workflow fails on drift. The final sync carries 46,733 IPv4 and 597 IPv6 CFAA entries and 164,212 blocked hosts. Data only.
 
-**Impact**: the serving role remains unverified in production, so it should not be treated as a working service. The other changes in this window are operator-visible in status, metrics and the installer.
+**Impact**: operators see the handshake breakdown on `/metrics`, and a `docker stop` now shuts the provider down cleanly. The blocklist refresh changes what a node blocks once it runs this build.
+
+**How to Identify in New Upstream**: the `[pqe]` line and the `urnet_sessions_*` names in `pqe_tracker.go` and `provider/metrics_provider.go`; the signal forwarding in `docker/scripts/provider_common.sh`.
+
+**Status**: merged on `main`, tagged `v2026.10.22-1078651310-meso`.
+
+---
+
+## 180. v2026.10.24: Extender Role (Unproven), Chrome ClientHello Switch, Proxy and Outage Fixes
+
+**Purpose**: Port the v2026 extender stack and the switchable Chrome ClientHello from 3.23-fix, and fix the outage-window failures of 2026-10-23. The window is `469b6128` (v2026.10.22) to `d20d24c6` (v2026.10.24), 144 non-merge commits.
+
+**Files Modified** (subset): `ip.go`, `ip_remote_multi_client.go`, `net_http.go`, `net_http_doh.go`, `net_tls.go`, `transport.go`, `transport_h3_quic_stats.go`, `protocol/extender.proto`, `provider/main.go`, `provider/proxy_trim.go`, `provider/lifetime_metrics.go`, `provider/smart_dialer_probe.go`, `provider/memory_headroom.go`, `provider/oom_cap.go`, `provider/resource_pressure.go`, `provider/proxy_url_source.go`, `scripts/Provider_Install_FreeBSD.sh`, `hotkeywallet/store.go`.
+
+**Files Added** (subset): `extender/`, `extenderrole/role.go`, `provider/extender_role.go`, `net_extender*.go`, `gossip/`, `res/extender_spoof.bin`, `net_tls_hello*.go`, `provider/tls_hello.go`, `provider/thrash_exit_note.go`, `internal/durablesync/`, `internal/urnettools/proxy_trim_status.go`.
+
+**Change**:
+- **The extender stack is ported and is a work in progress, not a proven role** (PRs #289, #290): the extender v2 library, the feed and gossip layer and the pinned directory candidate come from 3.23-fix. With `URNETWORK_EXTENDER` set, the role binds carriers on the direct slot (TCP 443, QUIC 443, DNS 4053). Forwards are limited to `URNETWORK_EXTENDER_ALLOWED_HOSTS`. The role has not been verified in production and does not run on the fleet. Review fixes are in #290.
+- **The Chrome ClientHello is a runtime switch, off by default** (PR #289): `urnet-tools set tls-hello on|off` applies to new connections, with `URNETWORK_TLS_HELLO` as the startup default. A persisted `off` beats the environment.
+- **Smaller ported subsystems** (PR #289): the blocker gate in the packet path, lag naming, a control-result and wallet-mapping API, and four dataplane leaves.
+- **Proxy trim reports its cap** (PRs #282, #284): `urnet-tools proxy trim` with no count prints the cap, its source and the held-back count.
+- **Lifetime counters carry their start date** (PRs #285, #287).
+- **The smart dialer is restart-required and costs nothing when off** (PR #297).
+- **The disk benchmark samples by time** (PR #300): a 3 s budget up to 256 MiB, in place of a fixed 16 MiB.
+- **Outage fixes** (PRs #302, #294, #298, #301, #288, #296, #291): proxied H3 charges its handshake bytes and waits on the attempt budget; the degraded reaper holds when scores tie; the memory-headroom check classifies the limit by source; OOM-cap write failures are reported; the URL-proxy warm-up hold is bounded to five minutes; a planned thrash restart writes its own marker; and the `psi_some_avg60` read targets `/proc/pressure/memory`.
+- **Installer and wallet fixes** (PRs #292, #293, #295): the FreeBSD installer refuses a bad binary before replacing a working one and no longer writes through a symlinked shell rc; the Windows hotkey write tolerates a directory flush that Windows refuses.
+- **CFAA and blocker tables refreshed** (PR #275): 46,733 to 47,632 IPv4 entries and 597 to 619 IPv6, blocked hosts 164,212 to 164,225. Data only.
+
+**Impact**: operators with `smart_dialer` on must restart to apply it. Nodes with `h3` set to `all`, a count or `auto` see their proxied H3 dials wait on the shared budget. The extender and ClientHello switch change nothing unless set.
+
+**How to Identify in New Upstream**: `extender/` and `provider/extender_role.go` for the role; `net_tls_hello_gate.go` and `provider/tls_hello.go` for the switch; `transport_h3_quic_stats.go` for the H3 accounting.
+
+**Status**: merged on `main`, tagged `v2026.10.24-1080497440-meso`. The extender role is in progress and unproven.

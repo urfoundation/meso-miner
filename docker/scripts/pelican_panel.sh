@@ -145,19 +145,20 @@ func_do_login() {
             echo "DEBUG: USER_AUTH set=$user_auth_set length=${#USER_AUTH}"
             echo "DEBUG: PASSWORD set=$password_set length=${#PASSWORD}"
             echo "DEBUG: AUTH_EXIT_CODE=$AUTH_EXIT_CODE"
-            # Preserve the output line without exposing echoed credentials.
-            auth_output_redacted=no
+            # Empty credentials must not match every output string, and the
+            # match ignores case: the server may echo the address normalized.
+            auth_output_sensitive=no
             auth_output_lower=$(printf '%s' "$AUTH_OUTPUT" | tr '[:upper:]' '[:lower:]')
             if [ -n "$USER_AUTH" ]; then
                 user_auth_trimmed=$(printf '%s' "$USER_AUTH" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
                 user_auth_lower=$(printf '%s' "$user_auth_trimmed" | tr '[:upper:]' '[:lower:]')
-                case "$auth_output_lower" in *"$user_auth_lower"*) auth_output_redacted=yes ;; esac
+                case "$auth_output_lower" in *"$user_auth_lower"*) auth_output_sensitive=yes ;; esac
             fi
             if [ -n "$PASSWORD" ]; then
                 password_lower=$(printf '%s' "$PASSWORD" | tr '[:upper:]' '[:lower:]')
-                case "$auth_output_lower" in *"$password_lower"*) auth_output_redacted=yes ;; esac
+                case "$auth_output_lower" in *"$password_lower"*) auth_output_sensitive=yes ;; esac
             fi
-            if [ "$auth_output_redacted" = yes ]; then
+            if [ "$auth_output_sensitive" = yes ]; then
                 echo "DEBUG: AUTH_OUTPUT=[redacted]"
             else
                 echo "DEBUG: AUTH_OUTPUT=$AUTH_OUTPUT"

@@ -54,31 +54,9 @@ ghcr.io/urfoundation/meso-miner:latest
 
 ## 🔑 Persistent JWT
 
-The JWT is stored inside the container at `/root/.urnetwork/jwt`. Restarting the same container keeps its writable layer; removing or recreating the container loses the JWT unless `/root/.urnetwork` is mounted.
+The JWT is stored inside the container at `/root/.urnetwork/jwt`. Restarting the same container keeps that file. To keep it when replacing the container, mount the same persistent volume at `/root/.urnetwork`. Stable and nightly startup reuse a valid saved JWT ([e1a1c7ca1](https://github.com/urfoundation/meso-miner/commit/e1a1c7ca1a3bee3bddbef1bfff9dde5e73573c41)).
 
-All examples below mount a config volume at `/root/.urnetwork`. Stable and JWT modes reuse a valid stored JWT on later starts. Nightly mode currently removes the stored JWT before its password-login flow, so it does not reuse that session at container start. Auth codes in JWT mode are single-use, so keep the state volume and provide a code only on first run or after removing it.
-
-## 🚦 Startup Checks and Debug Output
-
-**Proxy loading checks `/app/proxy.txt`.** Startup logs `[INFO] Checking proxy configuration`, then either `[INFO] proxy.txt found; adding proxy` or, when no `/app/proxy.txt` is mounted, `[INFO] No proxy.txt found; kept existing proxy configuration` (a saved config exists) or `[INFO] No proxy.txt found; none configured` (none is saved).
-
-Without `/app/proxy.txt`, the startup script keeps the saved `~/.urnetwork/proxy` configuration. It only removes stale `.proxy-import.*` staging directories older than ten minutes. Mount a current proxy list at `/app/proxy.txt` when using file-based proxies.
-
-**Take care with `DEBUG=true`.** The password-login path prints whether `USER_AUTH` and `PASSWORD` are set and their lengths, plus the auth exit code and auth output. It does not print the credential values, and the auth output line is replaced with `[redacted]` when it echoes one. Debug logs still record the credential lengths, so do not share them unedited.
-
-**The IP checker reports the shell pipeline result.** With `ENABLE_IP_CHECKER=true`, the startup script runs the external checker and logs:
-
-```text
-[INFO] Checking current public IP...
-[INFO] IP checker script ran successfully
-[WARN] Could not fetch or execute IP checker script
-```
-
-The success or warning does not separately prove whether the download succeeded. The current `curl | sh` pipeline can report success when the download fails but the shell exits successfully.
-
-**Nightly startup checks the binary before custom network selection.** With `BUILD=nightly`, the update check runs before the custom network selector because a fresh image may not yet contain the nightly provider binary for its architecture.
-
-For the exact startup log messages, see [Log Message Reference](/urfoundation/meso-miner/blob/main/LOG_REFERENCE.md).
+All examples below mount a config volume at `/root/.urnetwork`. With this volume in place, the startup script detects the existing JWT and skips authentication on later starts. Auth codes are only consumed once: on first run or after manually removing the config volume.
 
 ## 🏃 Docker Run - GHCR
 
@@ -635,6 +613,25 @@ Under Pelican (`PELICAN=yes`), the self-update checks in `start_nightly.sh` and 
 ### Testing
 
 The egg ships with automated CI checks (`docker/scripts/test_pelican_gates.sh` for egg JSON structure, variable contracts, and PELICAN-gate behavior; `docker/scripts/test_pelican_smoke.sh` for a full boot smoke test against a fake provider binary). For a real-panel import walkthrough and log output to expect, see `pelican/README.md`.
+
+## 🧾 Startup Checks and Debug Output
+
+These checks apply to `ghcr.io/urfoundation/meso-miner:latest`. The state directory in the container is `$HOME/.urnetwork` (`/root/.urnetwork`), and an optional proxy list is read from `/app/proxy.txt`.
+
+**The saved proxy configuration survives a start without `proxy.txt`.** The start script no longer deletes `~/.urnetwork/proxy` before it looks at `/app/proxy.txt`:
+
+```
+[INFO] Checking proxy configuration
+[INFO] No proxy.txt found; kept existing proxy configuration
+```
+
+When nothing was saved either, the second line reads `No proxy.txt found; none configured`. When the file is mounted, it is imported into a staging directory. After the import succeeds and produces valid servers, a malformed saved configuration is moved aside before the new configuration is installed. If the provider import fails or produces no valid servers, the malformed file stays at `~/.urnetwork/proxy`. A failed import keeps a usable saved configuration and the container carries on with it (`[WARN] Proxy import failed; kept the existing configuration`). If there is none, the container stops with `[ERROR] Proxy import failed and no configuration is saved; refusing to start without the mounted proxy`, rather than start sending traffic from its own address.
+
+**`DEBUG=true` does not print your credentials.** The password-login path prints whether each of the account email and password is set and its length, plus the auth command's exit code. The auth output is replaced with `DEBUG: AUTH_OUTPUT=[redacted]` when it contains either value (the match ignores case); other auth output is still printed, so read a debug log before you share it. This applies to the shared login loop and to the Pelican login.
+
+**The IP checker reports a failed download as a failure.** With `ENABLE_IP_CHECKER=true` the script downloads the checker to a temporary file and runs it only if the download succeeded. A failed download logs `[WARN] IP checker fetch failed` and nothing is run, a checker that runs and fails logs `[WARN] IP checker script failed`, and success logs `[INFO] IP checker script ran successfully`.
+
+**Nightly starts check for the update before they import the proxy list.** The nightly bootstrap runs the update check, then the proxy check, then `choose_network`, so a fresh nightly container has its provider binary before the import and before `UR_API_URL` and `UR_CONNECT_URL` are applied. Nightly reuses a valid saved JWT the same way stable does.
 
 ## Letting the Thrash Watchdog Restart the Container's Provider
 
