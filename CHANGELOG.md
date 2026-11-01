@@ -56,6 +56,8 @@ Everything merged after `v2026.10.24-1080497440-meso`.
 - **vnStat is described as retired everywhere** **[no redeploy]** (3df1e37c, #72). The config table, deployment guide, scaling guide, README pointer and Pelican page no longer tell operators to enable it or map port 8080. The heading is kept so linked anchors resolve, and the shakedown probe now fails when the retired port answers.
 - **The redaction test pins the relay-dial branch** **[no redeploy]** (514a3b60, #70). The UDP check can reject before the dial, so the test could pass without reaching the dial. It now stubs the check to fall through and requires the relay-dial message.
 
+- **The `URNETWORK_GOVERN` default is documented as `enforce`** **[no redeploy]** (`parseGovernMode` in `reconnect_budget.go`). Unset, empty and unrecognised values enforce, and `reconnect_budget_test.go` pins it. The configuration reference and `LOG_REFERENCE.md` said `shadow`. The v2026.10.19 entry below describes the older default and is a dated record, so it is not edited.
+
 ### Deploy notes
 
 1. Docker: nodes on the stable or nightly images pick up the startup proxy-import safety, the credential redaction and the version-from-tag updater only after the image is redeployed.

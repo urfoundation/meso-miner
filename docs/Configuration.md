@@ -47,7 +47,7 @@ Quick jump:
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `URNETWORK_PROFILE` | - | Advanced provider profile: `auto`, `lowmem`, `eco`, `turbo-v4`, or `turbo-v8`. For turbo, prefer `TURBO`. On systemd/native, set this with `urnet-tools turbo/eco/lowmode/auto` rather than a drop-in (v31+). |
-| `URNETWORK_GOVERN` | `shadow` | Backend-outage protection for the platform transport and the transfer retry budget. On this line the default is **shadow**: it observes and logs `[govern]` lines but never delays a connect or a resend. Set `enforce` to act, and `off` to disable it. Watch the `[govern]` lines (and the `urnet_govern_*` and `urnet_transfer_*` metrics) on a canary before enforcing. See [Backend outage protection](#backend-outage-protection). |
+| `URNETWORK_GOVERN` | `enforce` | Backend-outage protection for the platform transport and the transfer retry budget. On by default. Set `shadow` to observe and log `[govern]` lines without delaying a connect or a resend, and `off` to disable it. Any unrecognised value counts as `enforce`. Watch the `[govern]` lines (and the `urnet_govern_*` and `urnet_transfer_*` metrics) on a `shadow` canary if you want to see what it would do first. See [Backend outage protection](#backend-outage-protection). |
 | `TURBO` | - | Set to `v4` or `v8` to enable turbo mode. Prefer this variable for Docker turbo mode. |
 | `URNETWORK_RAMLOGS` | `0` | Set to `1` to redirect provider logs to RAM instead of stdout. Cannot be used with Docker `--log-opt`. On systemd/native, set this with `urnet-tools ramlogs on\|off` (v31+). |
 | `URNETWORK_MESSAGE_POOL_SHARD_COUNT` | `16` | Number of internal mutex shards per message-pool size class. Higher values reduce lock contention at high packet rates. Must be a power of two, 1–256. Set to `1` to disable sharding (pre-v24.35 behavior). Sane values: `8` (moderate), `16` (default), `32` (high-pps tier3+). |
@@ -314,4 +314,4 @@ What to look at:
 - `[govern]` lines (also in the important log) every minute while degraded and every 5 minutes as a heartbeat: attempts per second, connected, `died_young`, the failure classes, dials and KB per attempt, `would_hold`, and the mode, budget rate and number of proxies waiting.
 - `[health][govern]` in the heartbeat and the `urnet_govern_*` metrics (`mode`, `degraded`, `budget_rate`, `waiting`, `attempts`, `died_young`, `flap_backoffs_total`).
 
-The protection observes by default on this line and needs no setup. Set `URNETWORK_GOVERN=enforce` to let it act, `URNETWORK_GOVERN=off` to disable it; both need a restart.
+The protection is on by default and needs no setup. Set `URNETWORK_GOVERN=shadow` to observe and log only, or `URNETWORK_GOVERN=off` to disable it; both need a restart.
