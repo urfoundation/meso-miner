@@ -20,7 +20,7 @@ Everything merged after `v2026.10.24-1080497440-meso`.
 - **The Docker updater takes the version from the release tag** **[redeploy]** (a1357a54, tests 946fd6ef, 9cceb57b).
 - **The Pelican panel script accepts `URNETWORK_AUTH_CODE`** **[redeploy]** (ab616493).
 - **Proxy-list fetches report progress while they run** **[redeploy]** (62aac416, #69). A large public list used to be minutes of silence between "fetching now" and the summary. Each step is announced, a heartbeat every 30 seconds gives an honest remaining estimate, and the source being downloaded is named.
-- **IPv6 failures are remembered per proxy carrier** **[redeploy]** (f3604b29, #66; 38efd42a, #71). A SOCKS exit without IPv6 only shows it by letting a v6 dial hang. After three consecutive explicit v6 failures through one carrier, v6 is refused through that carrier for 15 minutes, then one probe is let through. Carriers do not affect each other or the host. A streak is bound to ten minutes, so old failures cannot add up to a suppression.
+- **IPv6 failures are remembered per proxy carrier** **[redeploy]** (f3604b29, #66; 38efd42a, #71). A SOCKS exit without IPv6 only shows it by letting a v6 dial hang. After three consecutive explicit v6 failures through one carrier, explicit v6 dials are refused through that carrier for 15 minutes, then one probe is let through. Carriers do not affect each other or the host. A gap of more than ten minutes between two failures resets the streak, so old failures cannot add up to a suppression, and a full streak can span longer than ten minutes. The provider cannot infer an exit's family from a hostname passed to the proxy.
 
 ### urnet-tools and installers
 

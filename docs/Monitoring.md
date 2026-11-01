@@ -27,14 +27,14 @@ Metrics: on
 Prometheus target: 100.64.0.10:9100
 ```
 
-The setting survives restarts and updates. Run `urnet-tools metrics status` at any time to see it again.
+The setting survives restarts and updates. Run `urnet-tools metrics status` at any time to see it again. `urnet-tools metrics off` stops the listener now, but a nonempty `URNETWORK_METRICS` starts it again on restart or HotSwap. Remove the environment variable as well to keep metrics off.
 
 ### Where the endpoint listens
 
 | Situation | Listens on |
 |---|---|
 | Bare metal or VM (default) | `127.0.0.1` plus this machine's Tailscale address, if it has one |
-| Docker container on a bridge network (default) | Every interface inside the container |
+| Docker container on a bridge network (default) | Every IPv4 interface inside the container. Other containers and hosts with a route to it can reach it without a published port |
 | Docker container sharing a publicly addressed network, such as `--network host` (default) | `127.0.0.1` plus Tailscale, as on bare metal |
 | `urnet-tools metrics listen <ip:port>` | Exactly that address |
 | `URNETWORK_METRICS=<ip:port>` set in the environment | Exactly that address (overrides everything above) |
