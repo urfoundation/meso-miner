@@ -34,7 +34,8 @@ The setting survives restarts and updates. Run `urnet-tools metrics status` at a
 | Situation | Listens on |
 |---|---|
 | Bare metal or VM (default) | `127.0.0.1` plus this machine's Tailscale address, if it has one |
-| Docker container (default) | Every interface inside the container |
+| Docker container on a bridge network (default) | Every interface inside the container |
+| Docker container sharing a publicly addressed network, such as `--network host` (default) | `127.0.0.1` plus Tailscale, as on bare metal |
 | `urnet-tools metrics listen <ip:port>` | Exactly that address |
 | `URNETWORK_METRICS=<ip:port>` set in the environment | Exactly that address (overrides everything above) |
 
@@ -66,7 +67,7 @@ The container's `urnet-tools` is a shell wrapper that does not carry the `metric
 Here `100.64.0.10` is the host's Tailscale address, and the Prometheus target is `100.64.0.10:9100`. For several containers on one host, publish each on its own host port (`-p 100.64.0.10:9101:9100`) and use that port as the target.
 
 > [!WARNING]
-> With `--network host`, the container shares the host's interfaces, so the default binds every host interface, including public ones. Use `urnet-tools metrics listen <tailscale-ip>:9100` there.
+> With `--network host`, the container shares the host's interfaces. When the provider sees a publicly addressed network it does not bind `0.0.0.0`: it logs a notice and stays on loopback and Tailscale. To scrape from elsewhere, set `URNETWORK_METRICS=<tailscale-ip>:9100` in the container's environment.
 
 ## 2. Run the monitoring stack
 
