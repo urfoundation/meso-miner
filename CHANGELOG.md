@@ -2,6 +2,35 @@
 
 Everything merged after `v2026.11.6-1091992770-meso`.
 
+This release adds the extender and fixes two bugs. I turned the extender on by default. Check that TCP 443 is open on the host and in any cloud firewall before you update. I suggest that you run `urnet-tools extender status` after the update.
+
+### Docker and provider
+
+- **The extender helps clients in censored networks reach URnetwork.** **[redeploy] [installer]** The extender does not earn. It is like a Tor bridge. The provider starts the extender on its own, on the provider's direct slot. No unit file edit or drop-in is needed. The installer prints one notice about TCP 443 and how to turn the extender off. It asks no question.
+- **The extender is controlled with `urnet-tools extender`.** **[redeploy] [installer]** The subcommands are `status`, `on`, `off`, `enable`, `disable`, `about` and `setup`. `off` stays off across restarts and updates. The change applies at once, with no restart. `URNETWORK_EXTENDER=off` sets the start default. In Docker, set the environment variable and restart the container. `urnet-tools extender` is not available in the container.
+- **`urnet-tools extender setup` checks and prepares the host.** **[redeploy] [installer]** It checks whether another process holds TCP 443, checks `cap_net_bind_service` on the provider binary and the active host firewall (`ufw`, `firewalld`, `iptables`, `nftables`, `pf`, `ipfw`, Windows Firewall) for TCP 443 (required) and UDP 443 and 4053 (optional), prints the exact commands to run, and asks for confirmation before changing anything (`--yes` for non-interactive runs, `--dry-run` to print without applying). On Linux it tests a live TCP 443 bind as the provider user when the port is free, or says plainly when the bind could not be tested.
+- **The extender status shows its ports, addresses and clients.** **[redeploy] [installer]** `urnet-tools extender status` shows the ports, the IPv4 and IPv6 state with expiry, the live clients, and requests served over 24 hours, 7 days and lifetime. `urnet-tools status` and `urnet-tools top` show the same block. The provider writes a `[health][extender]` line every few minutes with the same data.
+- **Extender log lines start with a bridge mark.** **[redeploy]** Every extender log line starts with 🌉. A line that reports an outcome adds a mark: ✅ worked, ⛔ refused by the platform, ❌ failed or ⚠️ warning.
+- **The extender requires TCP 443.** **[redeploy]** The extender binds TCP 443 first. While it cannot bind, it opens no other port. It retries every three minutes. The log names the process that holds the port when it can.
+- **The UDP ports are optional.** **[redeploy]** UDP 443 (QUIC), UDP 4053 (DNS carrier) and UDP 53 are optional. The extender tries UDP 53 by default. If UDP 53 is in use, the extender logs one warning and keeps UDP 4053. `URNETWORK_EXTENDER_DNS53=off` skips UDP 53. The DNS ports answer ordinary DNS questions from anyone, with strict rate limits. This is part of the carrier design. Firewall the ports to stop these answers.
+- **The firewall must allow the extender ports.** **[redeploy]** Allow inbound TCP 443 (required), and UDP 443 and 4053 (optional), in the host firewall and in any cloud firewall. IPv6 needs a public IPv6 address and a working default route.
+- **The extender activates the host with the platform.** **[redeploy]** The provider asks the platform to list the host, once for IPv4 and once for IPv6. The platform dials back on TCP 443. A listing lasts 24 hours. The provider renews it from the signed record. The provider reads the platform root keys from the platform. Until the keys load, renewal uses a fixed 12-hour interval.
+- **The extender keeps its activation across restarts.** **[redeploy]** The provider saves `.provider.extender.key`, `extender_pacing.json`, `extender_directory.json` and `extender_tally.json` in `~/.urnetwork/`. After a restart, a family whose listing is still valid shows ACTIVE at once. The provider asks the platform again at a random moment within 30 minutes, so a fleet that restarts together does not ask together. A restart keeps the activation of the family that posted last. The random delay never runs past half of the remaining life of a listing.
+- **A dual-stack host keeps the activation of the family that posted first.** **[redeploy]** That activation is kept when a newer record lists its address. A newer record that does not list the address clears the family.
+- **A failed activation retries with a longer wait.** **[redeploy]** A refused or failed attempt retries after 10 minutes. The wait doubles up to 6 hours, or the platform sets the wait. The platform allows 6 activations per client, per address family, per hour.
+- **Requests served counts forwarded requests.** **[redeploy]** The count includes the platform's own activation check, about one per activation per family. A proxy cannot be an extender. Only the host that runs the provider can be an extender.
+- **Docker needs host networking or an IPv6 bridge.** **[redeploy]** Use `--network host` for IPv4 and IPv6. Published ports on the default bridge give IPv4 only. Docker's IPv6 option on the bridge gives both. Keep `/root/.urnetwork` on a persistent volume. The auth code is single-use.
+- **Extender carrier status distinguishes binding from platform acceptance.** **[redeploy] [installer]** Activation warnings name carriers left out by the platform. The periodic health line and status show each family's carrier state, and a later acceptance logs a recovery.
+- **The client receive loop no longer stops on three peer inputs.** **[redeploy]** I removed three panics from the receive loop. A peer input could trigger each one, and each one stopped the whole client. A missing path in a sealed frame is now an error. A pack that belongs to another lane is now dropped. A stale head index is now healed, and the sequence opens.
+
+### urnet-tools and installers
+
+- **`urnet-tools logs` keeps showing new lines after a trim.** **[redeploy] [installer]** With RAM logs on, the log file is trimmed by rename. `urnet-tools logs` could stop showing new lines. The command now follows the file across a trim, without repeating a fragment. In Docker, it uses `tail -F`.
+
+### Documentation
+
+- **The extender pages describe the current extender.** **[no redeploy]** The extender guide, the configuration reference, the log reference and the project map describe the current extender.
+
 ### Added
 
 - **Capture diagnostic profiles without restarting the provider.** **[redeploy]** `urnet-tools diag` requests a private bundle over the control socket. It requires 512 MiB of free space and keeps the five newest bundles. Profiles may contain sensitive data.
