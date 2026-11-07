@@ -31,6 +31,10 @@ This release adds the extender and fixes two bugs. I turned the extender on by d
 
 - **The extender pages describe the current extender.** **[no redeploy]** The extender guide, the configuration reference, the log reference and the project map describe the current extender.
 
+### Added
+
+- **Capture diagnostic profiles without restarting the provider.** **[redeploy]** `urnet-tools diag` requests a private bundle over the control socket. It requires 512 MiB of free space and keeps the five newest bundles. Profiles may contain sensitive data.
+
 ## [v2026.11.6-1091992770-meso] — 2026-11-06
 
 Everything merged after `v2026.11.6-1091259400-meso`.
