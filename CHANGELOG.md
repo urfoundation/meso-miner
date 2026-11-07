@@ -19,6 +19,7 @@ This release adds the extender and fixes two bugs. I turned the extender on by d
 - **A failed activation retries with a longer wait.** **[redeploy]** A refused or failed attempt retries after 10 minutes. The wait doubles up to 6 hours, or the platform sets the wait. The platform allows 6 activations per client, per address family, per hour.
 - **Requests served counts forwarded requests.** **[redeploy]** The count includes the platform's own activation check, about one per activation per family. A proxy cannot be an extender. Only the host that runs the provider can be an extender.
 - **Docker needs host networking or an IPv6 bridge.** **[redeploy]** Use `--network host` for IPv4 and IPv6. Published ports on the default bridge give IPv4 only. Docker's IPv6 option on the bridge gives both. Keep `/root/.urnetwork` on a persistent volume. The auth code is single-use.
+- **Extender carrier status distinguishes binding from platform acceptance.** **[redeploy] [installer]** Activation warnings name carriers left out by the platform. The periodic health line and status show each family's carrier state, and a later acceptance logs a recovery.
 - **The client receive loop no longer stops on three peer inputs.** **[redeploy]** I removed three panics from the receive loop. A peer input could trigger each one, and each one stopped the whole client. A missing path in a sealed frame is now an error. A pack that belongs to another lane is now dropped. A stale head index is now healed, and the sequence opens.
 
 ### urnet-tools and installers
