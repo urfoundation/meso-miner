@@ -59,6 +59,7 @@ Most operators need to do one thing: sign a single wallet message, once, from th
 
 | If you want to... | Go here |
 | :--- | :--- |
+| **Run the provider as an extender** | [Extender guide](docs/Extender.md) |
 | **Get paid on Bittensor SN25 (do I need to do anything?)** | [Bittensor Quick Start](docs/Bittensor-Quick-Start.md) |
 | Install on a Linux host as a user-level service | [Installation Guide](docs/Installation.md) |
 | Run one Docker container | [Docker Deployment](docs/Docker-Deployment.md) |

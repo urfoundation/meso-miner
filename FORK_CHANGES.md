@@ -3844,3 +3844,20 @@ Parity port of the `fragment+segment` dialer from `urfoundation/meso-miner` (PR 
 **How to identify in new upstream**: Compare the process-list and uninstall guards, Windows lifecycle routes and `ensure_extender_cap` call sites with #82 and #83.
 
 **Status**: Included in `v2026.11.6-1091992770-meso`.
+
+## 184. Extender Setup Planning and Safety
+
+**Window**: Changes after the prior release-note window. This section describes the current local release candidate; no version is assigned here.
+
+**Purpose**: Show operators what extender setup will change before it applies host-level capability or firewall rules.
+
+**Files Modified**: `internal/urnettools/extender_setup.go`, `internal/urnettools/extender_platform.go`, `internal/urnettools/extender_firewall.go` and related tests and operator documentation.
+
+**Change**:
+- Setup inspects TCP 443 occupancy, provider binary bind capability and host firewall rules. It prints exact commands and asks before applying changes. `--yes` or `--force` is the only non-interactive approval.
+- FreeBSD extender setup is print-only and untested this release. It prints the sysctl commands and undo steps and makes no changes. Regular providing on FreeBSD is unaffected.
+- UDP 53 is optional and user-managed; setup does not inspect or open it.
+- Firewalld runtime and permanent rules are planned separately without a reload. Adding the bind capability preserves existing file capabilities.
+- The Docker log follower and hot-swap candidate bind race remain known limitations.
+
+**Status**: Prepared for the next release; no release number assigned.
