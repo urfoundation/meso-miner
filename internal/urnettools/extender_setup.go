@@ -138,6 +138,7 @@ func RunExtenderSetup(opts ExtenderSetupOptions) error {
 		fmt.Fprint(out, freeBSDSetupInstructions)
 		return nil
 	}
+	fmt.Fprintln(out, "UDP 53 is optional and user-managed; setup does not free the port or change its firewall rules.")
 
 	checker := opts.PortChecker
 	if checker == nil {

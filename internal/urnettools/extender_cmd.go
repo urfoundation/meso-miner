@@ -107,7 +107,7 @@ func newExtenderCmd() *cobra.Command {
 			"It is ON by default and earns nothing; it is a public service like a Tor bridge. " +
 			"'status' shows whether it is working: which ports are up, what IPv4 and IPv6 are doing and when each tries next, who it is helping, and what to fix if it is blocked. " +
 			"'about' explains the ports, the firewall, IPv6, Docker and what survives a restart, and works with the provider stopped. " +
-			"'setup' inspects port 443 occupancy, binary bind capability and host firewall rules, prints the exact commands needed, and asks for confirmation before changing anything (use -y/--yes for non-interactive runs). " +
+			"'setup' inspects port 443 occupancy, binary bind capability and host firewall rules, prints the exact commands needed, and asks for confirmation before changing anything (use -y/--yes for non-interactive runs). UDP 53 is optional and user-managed. FreeBSD extender setup is untested this release and only prints manual instructions. " +
 			"'off' (or 'disable') turns it off and keeps it off across restarts; 'on' (or 'enable') turns it back on. Both apply to the running provider at once, with no restart and no unit file edit. " +
 			"In Docker this command is not available: read `docker logs <container> | grep 🌉` and set URNETWORK_EXTENDER=off to disable it. " +
 			"Honors -n/--dry-run, which prints the plan and sends nothing.",
@@ -240,7 +240,8 @@ PORTS
   udp 53    optional. A second DNS port, tried automatically. If another
             resolver already holds it, the extender logs one warning and
             keeps using 4053 (it may repeat the warning if the role restarts).
-            URNETWORK_EXTENDER_DNS53=off skips it.
+            URNETWORK_EXTENDER_DNS53=off skips it. Setup does not manage this
+            port or its firewall rules; free and open it yourself if wanted.
   Without tcp 443 the extender opens none of the other ports: the platform
   could not list this host anew, so nothing could use them. (A listing the
   platform made earlier stays valid until it expires.) It retries tcp 443
@@ -253,11 +254,15 @@ HOW IT BECOMES ACTIVE
   survives a restart). IPv6 only works if this host has a public IPv6 address.
   After a restart a listing that is still valid shows as active at once, and
   the provider refreshes it within about 30 minutes.
+  Known limitation: a hot swap can race to bind tcp 443; check the extender
+  status after the swap if the listener is unavailable.
 
 FIREWALL
   Opening a port in the provider does not open it on the host. Run
   'urnet-tools extender setup' to inspect the binary capability and host
   firewall, print the exact commands needed, and apply them after confirmation.
+  On FreeBSD this setup is untested this release and only prints manual
+  instructions; it does not elevate or change the host.
   If you prefer to configure the host firewall manually, allow tcp 443
   (required) and optionally udp 443 and udp 4053:
     ufw:       sudo ufw allow 443/tcp   (and 443/udp, 4053/udp)
@@ -280,10 +285,16 @@ IPV6
   A host with an address but no route times out after about a minute.
 
 DOCKER
-  Use --network host (IPv4 and IPv6), or publish -p 443:443 -p 443:443/udp
-  -p 4053:4053/udp (IPv4 only unless Docker's bridge has IPv6 enabled). Keep
-  /root/.urnetwork on a persistent volume. Read the state with
-  docker logs <container> | grep 🌉 and disable with -e URNETWORK_EXTENDER=off.
+  Use --network host, or publish -p 443:443 -p 443:443/udp
+  -p 4053:4053/udp. UDP 53 is not published by those options; publish
+  -p 53:53/udp yourself only if wanted and available on the host.
+  With bridge networking, IPv6 requires an IPv6-enabled network and working
+  host IPv6 routing. Compose networks need IPv6 enabled on the network itself;
+  the daemon default bridge setting alone does not enable IPv6 on a Compose
+  network. Keep /root/.urnetwork
+  on a persistent volume. Read the state with docker logs <container> | grep 🌉
+  and disable with -e URNETWORK_EXTENDER=off. The Docker log follower has a
+  known limitation; if a follow session stops, start it again.
 
 WHAT IT EXPOSES
   The DNS ports also answer ordinary DNS questions from anyone, resolved
