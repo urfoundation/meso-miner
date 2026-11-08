@@ -27,7 +27,7 @@ Everything the provider binary does that is not the shared network stack.
 
 ## Operator tool (`cmd/urnet-tools/`, `cmd/urnet-docker/`, `internal/`)
 
-- `internal/urnettools/` holds the operator logic: the command tree (`cobra.go`), provider discovery (`discover*.go`), update with checksum verification (`update.go`, `release.go`), start/stop/restart (`lifecycle*.go`, `*_windows_route.go`), uninstall safety (`uninstall_process_guard.go`, `uninstall_unix.go`), capability restoration (`update_extender.go`), proxy commands, session save/load, self-heal, logs and Docker support (`cli_docker.go`, `docker.go`).
+- `internal/urnettools/` holds the operator logic: the command tree (`cobra.go`), provider discovery (`discover*.go`), update with checksum verification (`update.go`, `release.go`), extender setup and firewall planning (`extender_setup.go`, `extender_platform.go`, `extender_firewall.go`), start/stop/restart (`lifecycle*.go`, `*_windows_route.go`), uninstall safety (`uninstall_process_guard.go`, `uninstall_unix.go`), capability restoration (`update_extender.go`), proxy commands, session save/load, self-heal, logs and Docker support (`cli_docker.go`, `docker.go`).
 - `internal/tui/` is the terminal drawing kit behind `urnet-tools top`.
 - `internal/verdictfeed/` reads the signed backend-health feed (off by default).
 - `internal/promtext/`, `internal/durable*/` are small support packages for metrics checks and durable state.

@@ -510,6 +510,11 @@ grep '🌉❌' /dev/shm/urnetwork.log      # every failure
 urnet-tools logs                         # recent provider logs, then follow
 ```
 
+- UDP 53 is optional and user-managed. Setup does not inspect or open it; if you want to use it, configure the host firewall yourself.
+- `urnet-tools extender setup` inspects TCP 443 occupancy, whether the provider binary can bind TCP 443, and host firewall rules. It prints exact commands and asks before applying changes. Use `--yes` or `--force` only when you explicitly approve non-interactive changes. `--dry-run` only prints the plan.
+- On FreeBSD, setup is print-only and untested this release. It prints the `sysctl` commands and undo instructions and makes no changes. Regular providing on FreeBSD is unaffected.
+- Firewalld runtime and permanent rules are planned separately. Setup does not reload firewalld. Capability updates preserve existing file capabilities.
+
 Lines tagged `[extender]` are mirrored into the important buffer. Outcomes (started, stopped, failed, refused, activated) are also written to the disk events log, so they survive a reboot; the five-minute reminder below is written to the ordinary log only, so it reaches the RAM log and the important log (which is bounded and rotated) but not the events log, and a long failure cannot fill it.
 
 ### Start, stop and the setting

@@ -20,7 +20,7 @@ For it to work the host needs:
 2. **Permission to use a port below 1024**, which a non-root provider gets from `cap_net_bind_service` on the binary. The installer and `urnet-tools update` apply it.
 3. **A public IPv4 address**, and for IPv6 a public IPv6 address with a working route out.
 
-UDP 443, UDP 4053 and UDP 53 are optional. Without them the host is still listed over TCP.
+UDP 443 and UDP 4053 are optional. UDP 53 is also optional and remains user-managed: setup does not inspect or open it. Without UDP carriers the host is still listed over TCP.
 
 ## Is it working?
 
@@ -77,7 +77,7 @@ The role runs from the provider's direct slot, because only that slot's egress i
 | TCP 443 | TLS carrier | **Required.** The platform proves the host over this port. |
 | UDP 443 | QUIC carrier | Optional. |
 | UDP 4053 | DNS carrier | Optional. See the note on DNS below. |
-| UDP 53 | Second DNS port | Optional. Tried by default; skipped if something else holds it. `URNETWORK_EXTENDER_DNS53=off` skips it. |
+| UDP 53 | Second DNS port | Optional and user-managed. Setup does not inspect or open it. Configure it yourself only if you choose to use it. |
 
 TCP 443 gates everything. The extender binds it first, and **while it fails no other port is opened**: the platform could not list the host anyway, so nothing could use them. It retries every three minutes and opens the rest once it has the port. It says so plainly, naming what holds the port when the host will tell it:
 
@@ -102,10 +102,10 @@ urnet-tools extender setup --yes
 `urnet-tools extender setup` inspects the host and proposes only the missing privilege and firewall steps:
 
 1. **Port 443 occupancy.** Checks whether another process already holds TCP 443 and stops with the holder's name and PID if one does.
-2. **Low-port bind privilege.** On Linux, checks `getcap` on the installed provider binary (resolving symlinks) and the process capability bounding set (`/proc/self/status` `CapBnd`), and plans `setcap cap_net_bind_service=+ep <binary>` when missing. On FreeBSD, setup can set `net.inet.ip.portrange.reservedhigh=0` and persist it in `/etc/sysctl.conf`. This removes privileged-port protection for all users on the host. Record the previous value before confirming. To undo, remove the added assignment from `/etc/sysctl.conf` and restore the previous value with `sysctl net.inet.ip.portrange.reservedhigh=<previous value>`.
-3. **Host firewall rules.** Inspects the active local firewall (`ufw`, `firewalld`, `iptables`/`ip6tables`, `nftables`, `pf`/`ipfw`, or Windows Firewall) for inbound TCP 443 (required TLS carrier), UDP 443 (optional QUIC carrier) and UDP 4053 (optional DNS carrier), and plans only the rules that are not already present. For example, if `ufw` is active and already allows `443/tcp` while `443/udp` and `4053/udp` are missing, it proposes only `ufw allow 443/udp` and `ufw allow 4053/udp`.
-4. **Confirmation gate.** Prints the port summary and every command it will run under `Commands to run:`, then asks `Apply these changes? [y/N]:` before changing anything. In a non-interactive session without `--yes` (or `--force`) it executes nothing and exits with an error; `--dry-run` (`-n`) prints the plan and exits without prompting.
-5. **Bind verification.** On Linux, after capability checks, runs `<provider-binary> --extender-bind-probe` as the provider's user (`sudo -n -u <user>`) when TCP 443 is free to confirm a live low-port bind. When the running provider already holds TCP 443 or the probe cannot run without a password prompt, `setup` states plainly that the live TCP 443 bind was not tested.
+2. **Low-port bind privilege.** On Linux, checks whether the provider binary can bind TCP 443 and plans the missing `cap_net_bind_service` capability when needed. It preserves existing file capabilities when adding this capability. On FreeBSD, setup is print-only and untested this release. It prints the required `sysctl` commands and the undo instructions; it does not elevate or change the host. Regular providing on FreeBSD is unaffected.
+3. **Host firewall rules.** Inspects the active local firewall (`ufw`, `firewalld`, `iptables`/`ip6tables`, `nftables`, `pf`/`ipfw`, or Windows Firewall) for inbound TCP 443 (required), UDP 443 and UDP 4053 (optional), and plans only missing rules. UDP 53 is user-managed; setup does not inspect or open it. For firewalld, runtime and permanent rules are planned separately. Setup does not reload firewalld.
+4. **Confirmation gate.** Prints the port summary and exact commands, then asks before changing anything. `--yes` or `--force` is the only non-interactive approval. Without either flag, a non-interactive run changes nothing. `--dry-run` (`-n`) prints the plan without applying it.
+5. **Bind verification.** On Linux, after capability checks, runs the provider bind probe as the provider's user when TCP 443 is free. When the running provider already holds TCP 443 or the probe cannot run without a password prompt, setup states plainly that the live bind was not tested.
 
 Docker containers are not modified by `extender setup`; publish the ports on `docker run` or use `--network host` as shown below, and allow the ports in the host firewall.
 
@@ -122,8 +122,9 @@ sudo ufw allow 443/udp
 sudo ufw allow 4053/udp
 
 # firewalld (RHEL, Alma, Rocky, Fedora)
+# Add runtime rules now and permanent rules for the next start. No reload is needed.
+sudo firewall-cmd --add-port=443/tcp --add-port=443/udp --add-port=4053/udp
 sudo firewall-cmd --permanent --add-port=443/tcp --add-port=443/udp --add-port=4053/udp
-sudo firewall-cmd --reload
 
 # iptables (plain)
 sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT
@@ -303,6 +304,11 @@ The role also exports its state to Prometheus. Turn metrics on with `urnet-tools
 | A family stays `waiting` | TCP 443 is not bound, the platform asked it to wait, or direct providing is off. | Read the status line; it says which. |
 | `off: direct providing is disabled` | `urnet-tools direct off` is set. | `urnet-tools direct on`. |
 | `FAILED to start: <reason>` | The role failed for a reason other than a port. | The provider keeps providing and retries every 15 seconds; fix the reason shown. |
+
+## Known limitations
+
+- The Docker log follower has a known limitation. If a follow session stops, start it again.
+- A hot swap can race to bind TCP 443. Check `urnet-tools extender status` after an update.
 
 ## FAQ
 
