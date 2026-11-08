@@ -71,6 +71,25 @@ func executeExtenderSetupPlan(out io.Writer, plan []setupCommand, yes, dryRun bo
 	return nil
 }
 
+const freeBSDSetupInstructions = `FreeBSD extender setup is untested this release. Setup makes no changes.
+For a non-root provider, the following removes privileged-port protection for
+all users. Run these commands as root only if you accept that risk. The first
+command records the current value; do not overwrite an existing backup:
+  sysctl -n net.inet.ip.portrange.reservedhigh > /root/urnetwork-extender-reservedhigh.before
+  sysctl net.inet.ip.portrange.reservedhigh=0
+This change lasts until reboot. To persist it, first ensure /etc/sysctl.conf
+exists and the configuration backup does not already exist, then run as root:
+  cp -p /etc/sysctl.conf /root/urnetwork-extender-sysctl.conf.before
+  printf '\nnet.inet.ip.portrange.reservedhigh=0\n' >> /etc/sysctl.conf
+Undo the live change as root with:
+  sysctl net.inet.ip.portrange.reservedhigh="$(cat /root/urnetwork-extender-reservedhigh.before)"
+Undo persistence with the command below. Review the backup first so that you
+will not lose unrelated changes made since it was saved:
+  cp -p /root/urnetwork-extender-sysctl.conf.before /etc/sysctl.conf
+Manage pf or ipfw firewall rules yourself: allow
+TCP 443 and optionally UDP 443 and UDP 4053. UDP 53 is optional and user-managed.
+`
+
 // ExtenderSetupOptions controls the behavior of `urnet-tools extender setup`.
 type ExtenderSetupOptions struct {
 	Yes            bool
@@ -114,6 +133,10 @@ func RunExtenderSetup(opts ExtenderSetupOptions) error {
 	platform := opts.Platform
 	if platform == "" {
 		platform = runtime.GOOS
+	}
+	if platform == "freebsd" {
+		fmt.Fprint(out, freeBSDSetupInstructions)
+		return nil
 	}
 
 	checker := opts.PortChecker
