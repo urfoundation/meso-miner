@@ -20,9 +20,13 @@ func discoverProcesses() []Provider {
 	if err != nil {
 		return nil
 	}
+	managedPID := openbsdServicePID()
 	var providers []Provider
 	for _, row := range parseOpenBSDProcesses(string(out)) {
 		p := Provider{PID: row.pid, Running: true}
+		if managedPID > 0 && row.pid == managedPID {
+			p.Supervisor = "openbsd-rcd"
+		}
 		if u, err := user.LookupId(row.uid); err == nil {
 			p.User = u.Username
 			p.StateDir = resolveDiscoveredStateDir(u.HomeDir, "")
@@ -36,10 +40,19 @@ func discoverProcesses() []Provider {
 				var jwtErr error
 				p.Network, p.NetworkID, p.JWTExpires, jwtErr = decodeJWT(filepath.Join(p.StateDir, "jwt"))
 				p.IdentityRestricted = errors.Is(jwtErr, fs.ErrPermission)
-				p.Binary = installedOpenBSDProvider()
 			}
 		}
 		providers = append(providers, p)
+	}
+	// Only an rc.d-managed process can be associated with the installed
+	// binary; a matching ps command name alone is not evidence of its path.
+	binary := installedOpenBSDProvider()
+	if binary != "" && openbsdCheckScript(openbsdRcScriptPath(bsdRcServiceName(binary)), binary) == nil {
+		for i := range providers {
+			if providers[i].Supervisor == "openbsd-rcd" && providers[i].PID == managedPID {
+				providers[i].Binary = binary
+			}
+		}
 	}
 	return providers
 }

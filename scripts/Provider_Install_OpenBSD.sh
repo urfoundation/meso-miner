@@ -309,7 +309,15 @@ rc_script="/etc/rc.d/$service_name"
 # Paths: the install tree is root-owned at /usr/local/libexec/urnetwork-provider
 # (with chmod go-w), while the state directory (~/.urnetwork) lives in the
 # service user's home.
-service_user="$(resolve_service_user)"
+if [ -f "$rc_script" ]; then
+    service_user="$(awk -F'"' '/^[[:space:]]*daemon_user="[^"]+"[[:space:]]*$/ {print $2; exit}' "$rc_script")"
+    if [ -z "$service_user" ] || ! id -u "$service_user" >/dev/null 2>&1; then
+        pr_err "Cannot determine a valid daemon_user from %s" "$rc_script"
+        exit 1
+    fi
+else
+    service_user="$(resolve_service_user)"
+fi
 service_home="$(user_home "$service_user")"
 install_path="/usr/local/libexec/urnetwork-provider"
 provider_bin="$install_path/bin/urnetwork"
@@ -329,7 +337,7 @@ github_api="https://api.github.com/repos/urfoundation/meso-miner"
 priv() {
     if [ "$(id -u)" = "0" ]; then
         "$@"
-    elif command -v doas > /dev/null 2>&1 && [ -f /etc/doas.conf ]; then
+    elif command -v doas > /dev/null 2>&1 && doas -C /etc/doas.conf "$@" >/dev/null 2>&1; then
         doas ${PRIV_NOPROMPT:+-n} "$@"
     elif command -v sudo > /dev/null 2>&1; then
         sudo ${PRIV_NOPROMPT:+-n} "$@"
@@ -856,6 +864,14 @@ do_install() {
        ! priv chmod 755 "$rc_script"; then
         pr_warn "Could not write %s. Install the service manually as root:" "$rc_script"
         pr_warn "  %s install-service" "$me"
+        if [ "$had_old_binary" -eq 1 ] && [ -f "$provider_backup" ]; then
+            if ! priv mv -f "$provider_backup" "$provider_bin"; then
+                pr_err "Could not restore the previous binary from %s; restore it manually to %s" "$provider_backup" "$provider_bin"
+            else
+                pr_warn "Restored previous binary after rc.d write failure"
+            fi
+        fi
+        rm -rf "$tmpdir"
         exit 1
     fi
     if [ "${UPDATING:-0}" != "1" ]; then

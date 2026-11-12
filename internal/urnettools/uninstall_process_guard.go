@@ -67,7 +67,7 @@ var (
 	uninstallSleepFn      = time.Sleep
 	// cleanupLifecycleFn removes the platform lifecycle artifacts (Windows
 	// scheduled tasks, Unix timers). A seam so tests never touch real ones.
-	cleanupLifecycleFn = cleanupLifecycle
+	cleanupLifecycleFn = func(p Provider) error { cleanupLifecycle(p); return nil }
 )
 
 // liveSharingProcesses lists the live provider processes that could be

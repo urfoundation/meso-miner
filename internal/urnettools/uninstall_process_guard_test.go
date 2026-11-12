@@ -85,7 +85,7 @@ func newUninstallFixture(t *testing.T, running bool) *uninstallFixture {
 	}
 	uninstallSocketReachableFn = func(Provider) bool { return f.socketUp() }
 	uninstallSleepFn = func(time.Duration) { f.sleeps++ }
-	cleanupLifecycleFn = func(Provider) { f.events = append(f.events, "cleanup") }
+	cleanupLifecycleFn = func(Provider) error { f.events = append(f.events, "cleanup"); return nil }
 	return f
 }
 
@@ -110,6 +110,18 @@ func (f *uninstallFixture) assertUntouched(err error, wantMsg string) {
 		if e == "cleanup" {
 			f.t.Errorf("lifecycle cleanup ran despite the abort (events %v)", f.events)
 		}
+	}
+}
+
+func TestUninstallAbortsWhenLifecycleCleanupFails(t *testing.T) {
+	f := newUninstallFixture(t, true)
+	cleanupLifecycleFn = func(Provider) error { return errors.New("cleanup failed") }
+	err := cmdUninstall(nil, true, false)
+	if err == nil || !strings.Contains(err.Error(), "cleanup failed") {
+		t.Fatalf("expected cleanup failure, got %v", err)
+	}
+	if !f.filesPresent() {
+		t.Fatal("removed provider files after cleanup failure")
 	}
 }
 
