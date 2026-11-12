@@ -8,6 +8,10 @@ This document tracks all modifications made to the upstream URNetwork v3.23 code
 
 ---
 
+## OpenBSD support
+
+The provider and urnet-tools cross-build for OpenBSD amd64 and arm64. The installer downloads verified release assets from urfoundation/meso-miner on GitHub and uses rcctl for service management. See [OpenBSD](docs/OpenBSD.md) for installation and platform limits. The installer and service have not been tested on an OpenBSD host.
+
 ## Inherited from urnetwork-3.23-fix (carried by the parity port)
 
 Sections 1 through 165 are inherited history from `full-bars/urnetwork-3.23-fix`, carried over by the parity port. They are recorded here for rebase reference. The meso-miner parity work begins at section 166.

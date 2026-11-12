@@ -6,6 +6,8 @@ I added a guided setup for the extender and updated its operator notes.
 
 ### Provider and operator tools
 
+- **OpenBSD support.** Builds and release assets cover amd64 and arm64, with an rcctl installer, lifecycle controls and update support. The installer and service have not been tested on an OpenBSD host.
+
 - **Extender setup checks the host before it changes anything.** `urnet-tools extender setup` inspects TCP 443, checks whether the provider binary can bind the port, inspects the host firewall, prints the exact commands and asks before applying them. `--yes` or `--force` is the only non-interactive approval.
 - **FreeBSD extender setup is print-only.** It prints the `sysctl` commands and undo instructions. It makes no changes and was not tested on FreeBSD this release. Regular providing on FreeBSD is unaffected.
 - **UDP 53 remains optional and user-managed.** Setup does not inspect or open it.
