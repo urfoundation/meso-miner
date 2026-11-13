@@ -380,6 +380,28 @@ priv_rm() {
     return 0
 }
 
+# Create staging files exclusively so planted links cannot redirect writes.
+stage_file() {
+    priv sh -c 'set -C; cat "$1" > "$2"' stage_file "$1" "$2"
+}
+
+secure_install_dirs() {
+    for _d in "$install_path" "$install_path/bin"; do
+        if [ -L "$_d" ]; then
+            pr_err "%s is a symlink; refusing to install through it" "$_d"
+            return 1
+        fi
+        if ! priv chown root:wheel "$_d" 2>/dev/null && ! priv chown root "$_d" 2>/dev/null; then
+            pr_err "could not make %s root-owned" "$_d"
+            return 1
+        fi
+        priv chmod 755 "$_d" || return 1
+        [ "$(stat -f '%u %Lp' "$_d" 2>/dev/null)" = "0 755" ] || return 1
+    done
+    _links=$(priv find "$install_path" -type l -print) || return 1
+    [ -z "$_links" ] || { pr_err "symlink in install tree: %s" "$_links"; return 1; }
+}
+
 install_cleanup() {
     _status=$?
     trap - EXIT INT TERM HUP
@@ -428,8 +450,12 @@ enable_service() {
 # into the file.
 
 write_rc_script() {
-    write_rc_script_body "${1:-$(resolve_service_user)}" > "$rc_script" || return 1
-    chmod 755 "$rc_script"
+    _rc_tmp=$(priv mktemp "$rc_script.new.XXXXXX") || return 1
+    if ! write_rc_script_body "${1:-$(resolve_service_user)}" | priv tee "$_rc_tmp" > /dev/null ||
+       ! priv chmod 755 "$_rc_tmp" || ! priv mv -f "$_rc_tmp" "$rc_script"; then
+        priv_rm "$_rc_tmp"
+        return 1
+    fi
 }
 
 # write_rc_script_body [user] emits the rc.d script on stdout so it can be piped
@@ -728,6 +754,7 @@ do_install() {
     # elevates instead of failing at the first mkdir. (This was a regression
     # from moving the tree out of the service user's home.)
     priv mkdir -p "$install_path/bin" || { pr_err "Failed to create %s" "$install_path"; rm -rf "$tmpdir"; exit 1; }
+    secure_install_dirs || { rm -rf "$tmpdir"; exit 1; }
     # `cp` onto a running binary fails with ETXTBSY ("Text file busy"), which
     # is exactly the `update` case: the provider is still executing the file
     # being replaced. Staging next to the target and renaming is atomic, is
@@ -746,7 +773,7 @@ do_install() {
     # sudo timeout) may already have created the file as root, and that is
     # exactly the partial file the cleanup has to remove.
     staged_bin="$staged"
-    priv cp "$provider_src" "$staged" || { pr_err "Failed to stage binary"; priv_rm "$staged"; rm -rf "$tmpdir"; exit 1; }
+    stage_file "$provider_src" "$staged" || { pr_err "Failed to stage binary"; priv_rm "$staged"; rm -rf "$tmpdir"; exit 1; }
     priv chmod 755 "$staged"
     # The release tool is installed only when its digest can be verified, and
     # a release that publishes none is a release bug: refuse, never skip. The
@@ -763,7 +790,7 @@ do_install() {
         exit 1
     fi
     staged_tool="$install_path/bin/.urnet-tools.new.$$"
-    priv cp "$tmpdir/$tool_asset" "$staged_tool" || { pr_err "Failed to stage urnet-tools"; exit 1; }
+    stage_file "$tmpdir/$tool_asset" "$staged_tool" || { pr_err "Failed to stage urnet-tools"; exit 1; }
     priv chmod 755 "$staged_tool" || { pr_err "Failed to make urnet-tools executable"; exit 1; }
     # Verify the staged file itself, not only the downloaded source.
     if ! verify_sha256_file "$staged_tool" "$tool_digest"; then
@@ -839,6 +866,16 @@ do_install() {
 
     priv mv -f "$staged_tool" "$install_path/bin/urnet-tools" || { pr_err "Failed to install urnet-tools"; exit 1; }
     staged_tool=""
+    # Link before replacing the provider, so a link failure leaves its live
+    # binary untouched and no provider rollback is needed.
+    if [ ! -e /usr/local/bin/urnet-tools ] || [ -L /usr/local/bin/urnet-tools ]; then
+        if ! priv ln -sf "$install_path/bin/urnet-tools" /usr/local/bin/urnet-tools; then
+            pr_err "Could not link urnet-tools into /usr/local/bin; provider binary was not replaced"
+            exit 1
+        fi
+    else
+        pr_warn "/usr/local/bin/urnet-tools already exists; leaving it unchanged"
+    fi
     priv mv -f "$staged" "$provider_bin" || {
         pr_err "Failed to install binary"
         priv_rm "$staged"
@@ -860,8 +897,7 @@ do_install() {
         pr_info "Installing the rc.d service requires root; re-running that step with doas or sudo..."
     fi
     if ! priv mkdir -p "$(dirname "$rc_script")" ||
-       ! write_rc_script_body "$service_user" | priv tee "$rc_script" > /dev/null ||
-       ! priv chmod 755 "$rc_script"; then
+       ! write_rc_script "$service_user"; then
         pr_warn "Could not write %s. Install the service manually as root:" "$rc_script"
         pr_warn "  %s install-service" "$me"
         if [ "$had_old_binary" -eq 1 ] && [ -f "$provider_backup" ]; then
@@ -1059,7 +1095,7 @@ do_install_service() {
     # Running the provider as root because a bootstrap was run with sudo, or
     # because the box was logged into as root, would be a privilege
     # escalation the operator never asked for: refuse and say what to do.
-    service_user="$(resolve_service_user)"
+    [ -n "${service_user:-}" ] || service_user="$(resolve_service_user)"
     if [ "$service_user" = "root" ]; then
         pr_err "refusing to install a service that runs as root"
         pr_err "re-run as a normal user, or set SERVICE_USER_OVERRIDE=<user>"
@@ -1215,50 +1251,37 @@ write_state_flag() {
     }
 }
 
+tool_bin="$install_path/bin/urnet-tools"
+require_tool() {
+    [ -x "$tool_bin" ] || { pr_err "%s is missing; run: %s install" "$tool_bin" "$me"; return 1; }
+    [ "$(dd if="$tool_bin" bs=2 count=1 2>/dev/null)" != '#!' ] || {
+        pr_err "install the Go urnet-tools binary before using this command"
+        return 1
+    }
+}
+
 do_hot_restart() {
-    mode="${1:-}"
-    file="$state_dir/hot_restart"
-    case "$mode" in
-        on)    write_state_flag hot_restart on  || exit 1; pr_info "hot-restart enabled" ;;
-        off)   write_state_flag hot_restart off || exit 1; pr_info "hot-restart disabled" ;;
-        status|"")
-            if [ -f "$file" ] && [ "$(cat "$file" 2>/dev/null)" = "on" ]; then
-                pr_info "hot-restart: on"
-            else
-                pr_info "hot-restart: off"
-            fi
-            ;;
-        *) pr_err "Usage: urnet-tools hot-restart <on|off|status>"; exit 1 ;;
+    require_tool || return 1
+    case "${1:-}" in
+        on|off) "$tool_bin" set hot-restart "$1" ;;
+        status|"") "$tool_bin" set hot-restart ;;
+        *) pr_err "Usage: urnet-tools hot-restart <on|off|status>"; return 1 ;;
     esac
 }
 
 do_session() {
-    action="${1:-}"
-    shift 2>/dev/null || true
-    case "$action" in
-        save)
-            [ -n "${1:-}" ] || { pr_err "Usage: urnet-tools session save <file>"; exit 1; }
-            mkdir -p "$state_dir"
-            "$provider_bin" session-save "$1" || { pr_err "session save failed"; exit 1; }
-            pr_info "Session saved to %s" "$1"
-            ;;
-        load)
-            [ -n "${1:-}" ] || { pr_err "Usage: urnet-tools session load <file>"; exit 1; }
-            "$provider_bin" session-load "$1" || { pr_err "session load failed"; exit 1; }
-            pr_info "Session loaded; restarting"
-            restart_service
-            ;;
-        *) pr_err "Usage: urnet-tools session <save|load> <file>"; exit 1 ;;
+    require_tool || return 1
+    case "${1:-}" in
+        save|load) "$tool_bin" session "$@" ;;
+        *) pr_err "Usage: urnet-tools session <save|load> <file>"; return 1 ;;
     esac
 }
 
 do_proxy() {
-    action="${1:-}"
-    case "$action" in
-        refresh)     "$provider_bin" proxy-refresh ;;
-        remove-dead) "$provider_bin" proxy-remove-dead ;;
-        summary)     "$provider_bin" proxy-summary ;;
-        *)           pr_err "Usage: urnet-tools proxy <refresh|remove-dead|summary>"; exit 1 ;;
+    require_tool || return 1
+    case "${1:-}" in
+        refresh|remove-dead|summary) "$tool_bin" proxy "$@" ;;
+        *) pr_err "Usage: urnet-tools proxy <refresh|remove-dead|summary>"; return 1 ;;
     esac
 }
 
