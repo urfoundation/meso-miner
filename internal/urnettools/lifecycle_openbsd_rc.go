@@ -1,6 +1,42 @@
 package urnettools
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+)
+
+func openbsdCleanupMissingScript(err error, removeCron func() error) (bool, error) {
+	if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	if err := removeCron(); err != nil {
+		return true, fmt.Errorf("remove auto-update cron entry: %w", err)
+	}
+	return true, nil
+}
+
+func openbsdCheckScript(path, binary string) error {
+	script, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("no rc.d script: %w", err)
+	}
+	if binary == "" || !openbsdScriptServesBinary(string(script), binary) {
+		return fmt.Errorf("script does not serve the selected binary")
+	}
+	return nil
+}
+
+func openbsdScriptServesBinary(script, binary string) bool {
+	want := `daemon="` + binary + ` provide"`
+	for _, line := range strings.Split(script, "\n") {
+		if strings.TrimSpace(line) == want {
+			return true
+		}
+	}
+	return false
+}
 
 // OpenBSD keeps rc.d scripts in /etc/rc.d and drives them with rcctl(8). The
 // helpers here are pure so the argv and paths can be unit-tested on any

@@ -130,7 +130,9 @@ func cmdUninstall(args []string, force, dryRun bool) error {
 	}
 	// Clean up platform lifecycle artifacts: on Unix the auto-update timer,
 	// on Windows the scheduled tasks (heavyweight review S7).
-	cleanupLifecycleFn(p)
+	if err := cleanupLifecycleFn(p); err != nil {
+		return fmt.Errorf("uninstall %s: lifecycle cleanup failed: %w; nothing was removed", providerLabel(p), err)
+	}
 	// Only remove paths that look like real install paths — never "/" or
 	// a bare relative path.
 	// Both guards clean the path so "/" and "/./" are caught identically.
