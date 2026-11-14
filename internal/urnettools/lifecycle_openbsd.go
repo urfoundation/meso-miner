@@ -26,7 +26,8 @@ var bsdServiceRunFn = func(name string, args ...string) ([]byte, error) {
 func openbsdRcctl(args ...string) ([]byte, error) {
 	_, hasDoas := exec.LookPath("doas")
 	_, hasSudo := exec.LookPath("sudo")
-	name, argv, err := openbsdRcctlArgv(os.Geteuid(), hasDoas == nil, hasSudo == nil, args...)
+	_, configErr := os.Stat("/etc/doas.conf")
+	name, argv, err := openbsdRcctlArgv(os.Geteuid(), openbsdDoasUsable(hasDoas, configErr), hasSudo == nil, args...)
 	if err != nil {
 		return nil, err
 	}
