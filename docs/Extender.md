@@ -96,7 +96,7 @@ Binding below 1024 needs root or `CAP_NET_BIND_SERVICE`. The Docker image runs a
 ```sh
 urnet-tools extender setup
 urnet-tools extender setup --dry-run
-urnet-tools extender setup --yes
+urnet-tools extender setup --yes --route=sysctl
 ```
 
 `urnet-tools extender setup` inspects the host and proposes only the missing privilege and firewall steps:

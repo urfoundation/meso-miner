@@ -7,7 +7,7 @@ This guide covers the Linux installer, user-level systemd service, post-install 
 The provider is designed to run as a **non-privileged user service** for maximum security and reliability.
 
 > [!IMPORTANT]
-> Recommended: run this command as your normal non-root user. If run as root, the installer will guide you through creating a dedicated service user named `urnet`.
+> Recommended: run this command as your normal non-root user. If run as root, the installer will guide you through creating a dedicated service user named `urnet`. Without a terminal, a root install installs the tools only.
 
 Install:
 
@@ -94,7 +94,7 @@ rm -rf ~/.urnetwork
 
 ### Post-install commands
 
-Most `urnet-tools` commands work the same as on Linux. `eco`, `ramlogs` and `optimize` tune Linux kernel settings, so they do not work on macOS:
+Most `urnet-tools` commands work the same as on Linux. See the note below for `eco`, `ramlogs` and `optimize`:
 
 ```bash
 # Start/stop
@@ -119,7 +119,7 @@ urnet-tools summary
 ```
 
 > [!NOTE]
-> macOS doesn't support `eco`, `ramlogs`, or `optimize` (those tune Linux kernel parameters). `optimize` in particular has no effect on macOS — it runs Linux-specific `sysctl` keys that don't exist there and prints "done" while actually changing nothing. All other commands work natively.
+> `optimize` applies the macOS (BSD) kernel settings with `sysctl`. It sets the socket buffers, the file limits, the ephemeral port range and TIME_WAIT recycling. It needs root or `sudo`. The settings apply at once and do not survive a reboot. `eco` and `ramlogs` are not supported on macOS.
 
 ## 🔐 User-Level Systemd Service
 Unlike traditional services that run as root, this build defaults to a **systemd user unit**.
@@ -282,4 +282,4 @@ After optimization, your Docker container should restart and report:
 ```
 
 > [!NOTE]
-> If you only run Docker and do not intend to use the systemd provider service, the installer still offers just the tools. Choose `n` when prompted to enable the systemd service.
+> If you only run Docker and do not want the systemd provider service, run the installer as root on a systemd host and choose option 3 (continue as root, install tools only). Without a terminal, a root install installs the tools and skips the service by itself. Look for the line `continuing with tools only` in the installer output.
