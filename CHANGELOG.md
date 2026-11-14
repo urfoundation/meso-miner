@@ -1,22 +1,14 @@
 ## [Unreleased]
 
-Everything merged after `v2026.11.6-1091992770-meso`.
+Everything merged after `v2026.11.8-1093260920-meso`.
 
-I added a guided setup for the extender and updated its operator notes.
+This update adds OpenBSD support and ports the client side of the network operator's FP2 provider selection. It fixes a handshake bug where one forged id could wedge a peer session. It also stops the URL proxy source cycle cleanly on shutdown. The build is Go 1.27.4.
 
 ### Provider and operator tools
 
 - **OpenBSD support.** Builds and release assets cover amd64 and arm64, with an rcctl installer, lifecycle controls and update support. The installer and service have not been tested on an OpenBSD host.
 
-- **Extender setup checks the host before it changes anything.** `urnet-tools extender setup` inspects TCP 443, checks whether the provider binary can bind the port, inspects the host firewall, prints the exact commands and asks before applying them. `--yes` or `--force` is the only non-interactive approval.
-- **FreeBSD extender setup is print-only.** It prints the `sysctl` commands and undo instructions. It makes no changes and was not tested on FreeBSD this release. Regular providing on FreeBSD is unaffected.
-- **UDP 53 remains optional and user-managed.** Setup does not inspect or open it.
-- **Firewall plans avoid a firewalld reload.** Runtime and permanent rules are planned separately. Adding `cap_net_bind_service` preserves existing file capabilities.
-- **Known limitations remain.** The Docker log follower and the hot-swap candidate bind race are not fixed in this release.
-
 ### FP2 client window and handshake fix
-
-This update ports the client side of the network operator's FP2 provider selection and closes a handshake bug where one forged id could wedge a peer session. Redeploy after the update, because the handshake fix changes the binary.
 
 - **IPv6 admission, a TCP-only window and the redial side of recent exit memory in the multi client** (`ip_remote_multi_client_family.go`, `ip_remote_multi_client_limited.go`, `ip_remote_multi_client_recent_exits.go`, `ip_remote_multi_client_sticky.go`, `ip_remote_multi_client_window_client_stats.go`, `ip_capability.go`). A window now knows which exits carry IPv6 and keeps an IPv4 hard minimum, so a window of IPv6-only exits counts as empty for IPv4. When the IPv6 share falls short, the window asks the platform for an IPv6 candidate and swaps a loaded exit out for it. A failed IPv6 candidate counts toward a retry backoff, and two failures in a row pause the IPv6 fill for a retry period. A limited window holds providers that carry TCP only. It is half the size of the main window by default (`LimitedWindowSizeFraction`) and joins the race for each TCP connection. A user with a fixed exit never gets one, because it would change the exit address. A window can also take back an exit from a bounded recent exit memory, and a generation check drops a result that arrives after a newer one. Nothing fills that memory in this line yet, because it lacks upstream's typed transport-loss signal, so the redial path stays idle. The provider binary does not run this window. SDK and proxy clients built on this tree do, so a provider fleet sees no change from this entry alone.
 - **Peer capability observation** (`transfer_peer_capability_observation.go`, `transfer.go`, `transfer_encrypt.go`). The client records what each peer completed: the end-to-end handshake, the seal, and the receive window it advertised. A weak reference binds the record to the live session, so a stale session cannot replay it.
@@ -41,6 +33,18 @@ This update ports the client side of the network operator's FP2 provider selecti
 - Recent exit memory and the sticky redial of a fixed exit have no producer in this line. Filling them needs a typed transport-loss signal and an outage classifier that upstream has and this line does not.
 - With a fixed window size of one and a single IPv6-only exit, the window does not look for an IPv4 exit until it has room. Upstream behaves the same way.
 - This line does not have upstream's receive-sequence rejection records, so the handshake fix covers the handshake only. Whether an invalid contract can block lower sequence ids for good here is not verified.
+
+## [v2026.11.8-1093260920-meso] - 2026-11-08
+
+Changes after `v2026.11.6-1091992770-meso` through this tag. Notes: `releases/v2026.11.8-1093260920-meso.md`.
+
+### Provider and operator tools
+
+- **Extender setup checks the host before it changes anything.** `urnet-tools extender setup` inspects TCP 443, checks whether the provider binary can bind the port, inspects the host firewall, prints the exact commands and asks before applying them. `--yes` or `--force` is the only non-interactive approval.
+- **FreeBSD extender setup is print-only.** It prints the `sysctl` commands and undo instructions. It makes no changes and was not tested on FreeBSD this release. Regular providing on FreeBSD is unaffected.
+- **UDP 53 remains optional and user-managed.** Setup does not inspect or open it.
+- **Firewall plans avoid a firewalld reload.** Runtime and permanent rules are planned separately. Adding `cap_net_bind_service` preserves existing file capabilities.
+- **Known limitations remain.** The Docker log follower and the hot-swap candidate bind race are not fixed in this release.
 
 ### Documentation
 

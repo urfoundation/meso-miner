@@ -37,6 +37,15 @@ fetch -qo urnet-install.sh https://raw.githubusercontent.com/urfoundation/meso-m
 sudo sh urnet-install.sh install
 ```
 
+Install on OpenBSD. Use an existing non-root service account and replace `urnet` with its name:
+
+```sh
+ftp -o urnet-install.sh https://raw.githubusercontent.com/urfoundation/meso-miner/main/scripts/Provider_Install_OpenBSD.sh
+doas env SERVICE_USER_OVERRIDE=urnet sh urnet-install.sh install
+```
+
+OpenBSD support is experimental. The installer and the service have not run on an OpenBSD host. After the install, sign in as the service account with a single-use auth code from https://ur.io and restart the service. The [OpenBSD guide](https://github.com/urfoundation/meso-miner/blob/main/docs/OpenBSD.md) has the commands.
+
 For Docker, pull `ghcr.io/urfoundation/meso-miner:latest`. See the [Docker deployment guide](https://github.com/urfoundation/meso-miner/blob/main/docs/Docker-Deployment.md) for setup and persistent state.
 
 ## What changed
@@ -54,6 +63,9 @@ For Docker, pull `ghcr.io/urfoundation/meso-miner:latest`. See the [Docker deplo
 - **A forged handshake generation id cannot wedge a peer session. [redeploy]** A peer could send a ClientHello with a high id and make the responder drop every later ClientHello that carried a lower id. The responder now takes an id only from a ClientHello and ignores foreign proofs and responses.
 - **IPv6 admission and a TCP-only window in the multi client. [no redeploy]** SDK and proxy clients built on this tree keep an IPv4 hard minimum, ask for IPv6-capable exits when the IPv6 share falls short, and hold a limited window of TCP-only providers. The provider binary does not run this code.
 - **The blocklist sync runs the blocker, CFAA, Telegram and security tests against the upstream tables before it opens a PR. [no redeploy]**
+
+### Proxy sources
+- **A shutdown during the URL proxy source cycle no longer fails every source. [redeploy]** Before, a cancel marked every remaining source failed, set the resolution status to failed and warned once per source. The cycle now stops and logs one line with the cause. The results of finished sources are kept.
 
 ### Build and documentation
 - **The build is Go 1.27.4. [redeploy]**
