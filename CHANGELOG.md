@@ -1,6 +1,10 @@
 ## [Unreleased]
 
-Everything merged after `v2026.11.8-1093260920-meso`.
+Everything merged after `v2026.11.14-1098553390-meso`.
+
+## [v2026.11.14-1098553390-meso] - 2026-11-14
+
+Changes after `v2026.11.8-1093260920-meso` through this tag. Notes: `releases/v2026.11.14-1098553390-meso.md`.
 
 This update adds OpenBSD support and ports the client side of the network operator's FP2 provider selection. It fixes a handshake bug where one forged id could wedge a peer session. It also stops the URL proxy source cycle cleanly on shutdown. The build is Go 1.27.4.
 
