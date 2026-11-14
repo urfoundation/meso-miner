@@ -46,6 +46,12 @@ for target in linux/amd64 linux/arm64 windows/amd64 windows/arm64 darwin/amd64 d
   echo "  ok $target"
 done
 
+echo "== go vet ./provider/ ./internal/urnettools/ and root for openbsd"
+for arch in amd64 arm64; do
+  GOOS=openbsd GOARCH=$arch go vet ./provider/ ./internal/urnettools/ . >/dev/null
+  echo "  ok openbsd/$arch"
+done
+
 echo "== shard partition covers every package"
 ./.github/scripts/test_shard.sh --verify
 

@@ -5,7 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"os/user"
-	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,26 +20,43 @@ func discoverProcesses() []Provider {
 	if err != nil {
 		return nil
 	}
+	managedPID := openbsdServicePID()
 	var providers []Provider
 	for _, row := range parseOpenBSDProcesses(string(out)) {
 		p := Provider{PID: row.pid, Running: true}
+		if managedPID > 0 && row.pid == managedPID {
+			p.Supervisor = "openbsd-rcd"
+		}
 		if u, err := user.LookupId(row.uid); err == nil {
 			p.User = u.Username
 			p.StateDir = resolveDiscoveredStateDir(u.HomeDir, "")
-			if stateDirIsSymlink(p.StateDir) {
-				// A symlinked state dir could redirect root's reads and
-				// writes anywhere, so the provider gets no identity.
-				p.StateDir = ""
-			}
 			if p.StateDir != "" {
 				p.StateHome = u.HomeDir
-				var jwtErr error
-				p.Network, p.NetworkID, p.JWTExpires, jwtErr = decodeJWT(filepath.Join(p.StateDir, "jwt"))
-				p.IdentityRestricted = errors.Is(jwtErr, fs.ErrPermission)
-				p.Binary = installedOpenBSDProvider()
+				h, err := openStateDirIn(p.StateHome, p.StateDir)
+				if err != nil {
+					p.IdentityRestricted = errors.Is(err, fs.ErrPermission)
+					p.StateDir = ""
+				} else {
+					raw, err := h.readFile("jwt", maxJWTBytes)
+					h.Close()
+					p.IdentityRestricted = errors.Is(err, fs.ErrPermission)
+					if err == nil {
+						p.Network, p.NetworkID, p.JWTExpires, _ = decodeJWTBytes(raw)
+					}
+				}
 			}
 		}
 		providers = append(providers, p)
+	}
+	// Only an rc.d-managed process can be associated with the installed
+	// binary; a matching ps command name alone is not evidence of its path.
+	binary := installedOpenBSDProvider()
+	if binary != "" && openbsdCheckScript(openbsdRcScriptPath(bsdRcServiceName(binary)), binary) == nil {
+		for i := range providers {
+			if providers[i].Supervisor == "openbsd-rcd" && providers[i].PID == managedPID {
+				providers[i].Binary = binary
+			}
+		}
 	}
 	return providers
 }
@@ -84,8 +101,56 @@ func stateDirIsSymlink(dir string) bool {
 	return err == nil && fi.Mode()&os.ModeSymlink != 0
 }
 
-// Stopped services are not enumerated yet.
-func discoverStopped(_ []Provider) []Provider { return nil }
+func discoverStopped(running []Provider) []Provider {
+	for _, p := range running {
+		if p.Supervisor == "openbsd-rcd" {
+			return nil
+		}
+	}
+	bin := installedOpenBSDProvider()
+	if bin == "" || openbsdCheckScript(openbsdRcScriptPath("urnetwork"), bin) != nil {
+		return nil
+	}
+	data, err := os.ReadFile(openbsdRcScriptPath("urnetwork"))
+	if err != nil {
+		return nil
+	}
+	var name string
+	for _, line := range strings.Split(string(data), "\n") {
+		if v, ok := strings.CutPrefix(line, `daemon_user="`); ok {
+			name, _ = strings.CutSuffix(v, `"`)
+			break
+		}
+	}
+	if name == "" || name == "root" {
+		return nil
+	}
+	for i, r := range name {
+		if !(r >= 'a' && r <= 'z' || r == '_' || i > 0 && (r >= '0' && r <= '9' || r == '-')) {
+			return nil
+		}
+	}
+	u, err := user.Lookup(name)
+	if err != nil {
+		return nil
+	}
+	dir := resolveDiscoveredStateDir(u.HomeDir, "")
+	if dir == "" || stateDirIsSymlink(dir) {
+		return nil
+	}
+	p := Provider{User: u.Username, StateDir: dir, StateHome: u.HomeDir, Binary: bin, Supervisor: "openbsd-rcd"}
+	h, err := openStateDirIn(p.StateHome, p.StateDir)
+	if err == nil {
+		raw, readErr := h.readFile("jwt", maxJWTBytes)
+		h.Close()
+		err = readErr
+		if err == nil {
+			p.Network, p.NetworkID, p.JWTExpires, _ = decodeJWTBytes(raw)
+		}
+	}
+	p.IdentityRestricted = errors.Is(err, fs.ErrPermission)
+	return []Provider{p}
+}
 
 func currentUserName() string {
 	if u, err := user.Current(); err == nil {
