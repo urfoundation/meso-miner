@@ -14,6 +14,30 @@ I added a guided setup for the extender and updated its operator notes.
 - **Firewall plans avoid a firewalld reload.** Runtime and permanent rules are planned separately. Adding `cap_net_bind_service` preserves existing file capabilities.
 - **Known limitations remain.** The Docker log follower and the hot-swap candidate bind race are not fixed in this release.
 
+### FP2 client window and handshake fix
+
+This update ports the client side of the network operator's FP2 provider selection and closes a handshake bug where one forged id could wedge a peer session. Redeploy after the update, because the handshake fix changes the binary.
+
+- **IPv6 admission, a TCP-only window and the redial side of recent exit memory in the multi client** (`ip_remote_multi_client_family.go`, `ip_remote_multi_client_limited.go`, `ip_remote_multi_client_recent_exits.go`, `ip_remote_multi_client_sticky.go`, `ip_remote_multi_client_window_client_stats.go`, `ip_capability.go`). A window now knows which exits carry IPv6 and keeps an IPv4 hard minimum, so a window of IPv6-only exits counts as empty for IPv4. When the IPv6 share falls short, the window asks the platform for an IPv6 candidate and swaps a loaded exit out for it. A failed IPv6 candidate counts toward a retry backoff, and two failures in a row pause the IPv6 fill for a retry period. A limited window holds providers that carry TCP only. It is half the size of the main window by default (`LimitedWindowSizeFraction`) and joins the race for each TCP connection. A user with a fixed exit never gets one, because it would change the exit address. A window can also take back an exit from a bounded recent exit memory, and a generation check drops a result that arrives after a newer one. Nothing fills that memory in this line yet, because it lacks upstream's typed transport-loss signal, so the redial path stays idle. The provider binary does not run this window. SDK and proxy clients built on this tree do, so a provider fleet sees no change from this entry alone.
+- **Peer capability observation** (`transfer_peer_capability_observation.go`, `transfer.go`, `transfer_encrypt.go`). The client records what each peer completed: the end-to-end handshake, the seal, and the receive window it advertised. A weak reference binds the record to the live session, so a stale session cannot replay it.
+- **Structured `[rel]` window log lines** (`ip_remote_multi_client_observability.go`). Each line is `[rel] event=<name>` followed by lowercase `key=value` pairs. The window prints `family_starved` today. `recent_exit` and `sticky_redial` are defined and wait for the memory to be filled. See `LOG_REFERENCE.md`.
+- **Connect successes and dial failures record the IP version they used.**
+- **A forged handshake generation id cannot wedge a peer session** **[redeploy]** (`transfer_encrypt.go`, `transfer.go`). The epoch id of a handshake sits outside the signed TLS exporter. A peer could send a ClientHello with a high id, and the responder then dropped every later ClientHello that carried a lower id. The responder now takes an id from a peer only through a ClientHello. It ignores foreign proofs and responses. It orders ids only while a handshake attempt is in flight and `TlsTimeout` is positive. The optimistic receive path now passes the wire generation on, so a foreign proof cannot skip the check.
+- **OpenBSD: `urnet-tools` falls back to `sudo` when `doas` has no config** (`internal/urnettools/lifecycle_openbsd_rc.go`). A missing `/etc/doas.conf` now selects `sudo`. Any other error reading the file keeps `doas`, because a config that only root can read is normal.
+- **The BSD auto-update cron line builds its log path with `path.Join`** (`internal/urnettools/lifecycle_bsd_cron.go`). Behavior on a BSD host does not change. The Windows lifecycle test passes again.
+
+### Changed
+
+- **The build is Go 1.27.4** (`go.mod`, `Dockerfile`, the workflows). The network operator's server and the sn line already require it.
+- **The blocklist sync checks the decoder before it opens a PR** (`.github/workflows/cfaa-blocklist-sync.yml`, `.github/scripts/cfaa_format_check.sh`). Upstream can change the generated table format together with its decoder, and the sync copied only the tables. The sync job now writes the tables into the tree and runs the blocker, CFAA, Telegram and security tests first. A PR opened by the workflow does not trigger CI, so that run is the test. When the tests fail, the job opens no branch and no PR, and the Discord message lists the failing tests and the upstream commits that changed the format code.
+
+### Known limits
+
+- The blocklist tables stay at the refresh before 2026-11-13. Upstream's tables from that day use a new format and list a Telegram call reflector (`91.108.13.57`) that upstream's own test rejects. The sync check blocks them until upstream fixes the table and this line takes the matching decoder.
+- Recent exit memory and the sticky redial of a fixed exit have no producer in this line. Filling them needs a typed transport-loss signal and an outage classifier that upstream has and this line does not.
+- With a fixed window size of one and a single IPv6-only exit, the window does not look for an IPv4 exit until it has room. Upstream behaves the same way.
+- This line does not have upstream's receive-sequence rejection records, so the handshake fix covers the handshake only. Whether an invalid contract can block lower sequence ids for good here is not verified.
+
 ### Documentation
 
 - **Operator docs cover the new setup flow and its limits.** The extender guide, project map, log reference, README and release notes describe current behavior.
