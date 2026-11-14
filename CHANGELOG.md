@@ -26,6 +26,10 @@ This update ports the client side of the network operator's FP2 provider selecti
 - **OpenBSD: `urnet-tools` falls back to `sudo` when `doas` has no config** (`internal/urnettools/lifecycle_openbsd_rc.go`). A missing `/etc/doas.conf` now selects `sudo`. Any other error reading the file keeps `doas`, because a config that only root can read is normal.
 - **The BSD auto-update cron line builds its log path with `path.Join`** (`internal/urnettools/lifecycle_bsd_cron.go`). Behavior on a BSD host does not change. The Windows lifecycle test passes again.
 
+### Fixed
+
+- **A shutdown during the URL proxy source cycle no longer fails every source** **[redeploy]** (`provider/proxy_url_source.go`). Before, a cancel that arrived while the provider read or probed its URL sources marked every remaining source failed, set the resolution status to failed and warned the operator once per source. The cycle now checks its context before each source, after a failed fetch and after each source. A cancel logs one `fetch cycle cancelled after N of M sources` line with the cause and stops the cycle. The results of finished sources are still merged, and a probe that ended because of the cancel no longer logs "all unparseable or dead" or warns. The sn line has the same logic.
+
 ### Changed
 
 - **The build is Go 1.27.4** (`go.mod`, `Dockerfile`, the workflows). The network operator's server and the sn line already require it.
