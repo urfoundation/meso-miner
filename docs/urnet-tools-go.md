@@ -112,7 +112,7 @@ On a host where OpenRC is the running init system, the lifecycle commands (`star
 | `config [--json]` | Show every provider setting with the source it came from (`socket`, `env`, `pending`, `legacy`, `default`). The provider is the single source of truth; this is what it actually believes. |
 | `set <key> <value>` | Set a runtime setting over the control socket. Prints `⚠ <key> requires a restart to take effect` when the provider reports the key has no live effect. Queued to `pending_overrides.json` when the provider is down. |
 | `set <key>` | Show one setting's current value. Reads are not logged at the provider, because `status` polls them on every invocation. |
-| `set <key> off` | Clear a runtime setting and restore its default. For most keys this means dropping the override and reverting to the startup default, but for `proxy-ipv6-probe`, `proxy-udp-ipv6`, and `proxy-dualstack` the value `"off"` is stored persistently and survives restarts — to restore the default you must explicitly set the key to `on`. |
+| `set <key> off` | Clear a runtime setting and restore its default. For most keys this means dropping the override and reverting to the startup default. For `proxy-ipv6-probe`, `proxy-udp-ipv6` and `proxy-dualstack` the value `"off"` is stored persistently and survives restarts, so the default comes back only when the key is set to `on`. |
 | `history [limit]` | Show the provider's command audit trail from its 1000-entry circular ring. Defaults to the last 50, maximum 100. |
 | `dashboard` | Rich terminal status panel: state indicators, active settings, proxy sources, and restart warnings. Aliases `dash`, `panel`. |
 | `baseline show [-n N] [--json]` | Show the newest rows of this box's own behaviour record: UTC time, kind, version, proxies up against desired, RSS, host memory available, swap, and the file's first and last timestamps and size. Default 20 rows, at most 200. Reads `~/.urnetwork/baseline.jsonl` directly, so it works on a box whose provider is stopped. |
@@ -252,13 +252,14 @@ The counts sum to the online total. Checked is the sum of all counts except unch
 
 IPv6 coverage counts:
 
-- `IPv6 proxies: <Y> yes, <N> no, <U> unknown[, <NP> not probed]` — how many online proxies were measured to carry IPv6, where yes means the IPv6 relay works with a matching exit address, no means no IPv6 capability was confirmed, unknown means the check has no confirmed result, and not probed means the proxy has not been measured yet.
+- `IPv6 proxies: <Y> yes, <N> no, <U> unknown[, <NP> not probed]`: how many online proxies were measured to carry IPv6. Yes means the IPv6 relay works with a matching exit address, no means no IPv6 capability was confirmed, unknown means the check has no confirmed result, and not probed means the proxy has not been measured yet.
+- `IPv6 UDP probes: <Y> yes[, <N> no][, <U> unknown]`: how many proxies had their IPv6 UDP relay measured. Yes means the relay works with a matching exit address, no means the relay refused or there is no relay, and unknown means the check has no confirmed result.
 
-- `IPv6 UDP probes: <Y> yes[, <N> no][, <U> unknown]` — how many proxies had their IPv6 UDP relay measured; yes means relay works with matching exit address, no means relay refused or no relay, unknown means check has no confirmed result.
+The row reports measurements. Whether a relay is used also depends on the `proxy_udp_ipv6` key.
 
 The top proxy popup shows, per proxy, the exit addresses it can reach: `TCP exit (IPv4) <ip>`, `TCP exit (IPv6) <ip>`, `UDP exit (IPv4) <ip>`, `UDP exit (IPv6) <ip>`, and `IPv6 exit: <status> [(<ip>)]`.
 
-### 2. Session Save and Load### 2. Session Save and Load
+### 2. Session Save and Load
 
 Securely backup, migrate, or clone provider identities:
 
