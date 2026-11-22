@@ -238,18 +238,6 @@ The counts sum to the online total. Checked is the sum of all counts except unch
 
 ### IPv6 proxy coverage
 
-`urnet-tools top` and `urnet-tools status` report coverage for online proxies. Online means up or degraded.
-
-UDP coverage counts:
-
-- `ok`: the relay works and its exit address matches TCP.
-- `no UDP` (`no-udp` in narrow `top` views): the proxy refuses UDP ASSOCIATE or the relay does not answer.
-- `mismatch` (`diff` in narrow `top` views): the relay works but its exit address differs from TCP.
-- `unknown` (`unk` in narrow `top` views): the relay works but its TCP exit address is unknown.
-- `unchecked`: the result is missing, in flight or expired.
-
-The counts sum to the online total. Checked is the sum of all counts except unchecked. `ok/checked` is the percentage of checked proxies that are ok. `ok/online` is the percentage of online proxies that are ok. A zero denominator shows `n/a`. Compact `top` panels (up to 3 proxies) show the counts on one row and omit the percentage line. When a provider omits the field, the UDP row is omitted.
-
 IPv6 coverage counts:
 
 - `IPv6 proxies: <Y> yes, <N> no, <U> unknown[, <NP> not probed]`: how many online proxies were measured to carry IPv6. Yes means the IPv6 relay works with a matching exit address, no means no IPv6 capability was confirmed, unknown means the check has no confirmed result, and not probed means the proxy has not been measured yet.
