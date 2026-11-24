@@ -29,6 +29,7 @@ Everything the provider binary does that is not the shared network stack.
 
 - `internal/urnettools/` holds the operator logic: the command tree (`cobra.go`), provider discovery (`discover*.go`), status summary model (`status_summary.go`, `status_model.go`, `status_brief.go`, `status_json.go`), top dashboard and heatmaps (`top_*.go`), extender events and gossip ring (`extender_events.go`, `gossip_ring.go`), update with checksum verification (`update.go`, `release.go`), extender setup and firewall planning (`extender_setup.go`, `extender_platform.go`, `extender_firewall.go`), start/stop/restart (`lifecycle*.go`, `*_windows_route.go`), uninstall safety (`uninstall_process_guard.go`, `uninstall_unix.go`), capability restoration (`update_extender.go`), proxy commands, session save/load, self-heal, logs and Docker support (`cli_docker.go`, `docker.go`).
 - `internal/tui/` is the terminal drawing kit behind `urnet-tools top`.
+- `internal/brand/` holds the terminal wordmark and icon artwork, with the depth and width rules that pick and render an asset. The logo switches live in `internal/urnettools/logo.go`.
 - `internal/nicstat/` reads cumulative Linux network interface byte counters.
 - `internal/verdictfeed/` reads the signed backend-health feed (off by default).
 - `internal/promtext/`, `internal/durable*/` are small support packages for metrics checks and durable state.
