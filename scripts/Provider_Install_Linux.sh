@@ -451,6 +451,62 @@ pr_warn ()
     fi
 }
 
+# install_logo draws the URnetwork wordmark at the start of an interactive
+# install. The artwork is embedded because the installer runs before anything
+# is downloaded, and it is drawn in block characters in the default
+# foreground, so it needs no color support and NO_COLOR changes nothing.
+# An unattended run (FORCE=1), output that is not a terminal, and a terminal
+# narrower than the artwork all keep the output the installer printed before.
+install_logo ()
+{
+    [ "${FORCE:-0}" = "1" ] && return 0
+    [ -t 1 ] || return 0
+    # The width is read inside a command substitution, where stdout is a pipe.
+    # Keep the real stdout on descriptor 7 so the size comes from the terminal
+    # that will show the artwork, which is not always the controlling terminal.
+    exec 7>&1
+    logo_width="$(install_logo_columns)"
+    exec 7>&-
+    [ "$logo_width" -ge 82 ] || return 0
+    cat <<'URNETWORK_WORDMARK'
+
+▗▟███▄  ▐█▌     ▟█ ▐███████▙▖                ▗▄█                         ███
+███████ ▐█▌     ██ ▐█▌    ▝▜█  ▄▄▄▄█▄ ▗▄██▄▖▗▟██▙▄▄▄ ▄▄▄▗▄▄▖▄▄██▄▖ ▄▄▄▄▙▖███ ▄▄▖
+▜█████▛ ▐█▌     ██ ▐█▙▄▄▄▄▄██  ██▛▜██ ██▛▜██▞▜██▀▐██▗███▐██▐██▛▜██ ██▛██▌███▟██▘
+ ▝▀▀▀▘  ▐█▌     ██ ▐█▛▀▀▀▜█▙   ██▌▐██▐██████▌▐██  ██████▟██▐██▌▐██ ██▌██▌█████▌
+        ▐█▙    ▗██ ▐█▌    ▝▜█  ██▌▐██▝██▌▐██▖▐██▖ ▜███▐███▌▐██▌▟██ ██▌   ███▜██▖
+         ▝▜█████▀  ▐█▌     ▐█  ██▌▐██ ▀████▀ ▝███ ▐███ ███▘ ▀████▀ ██▌   ███▝██▙
+URNETWORK_WORDMARK
+}
+
+# install_logo_tty_size prints the terminal's "rows columns": first the one
+# behind descriptor 7 (the saved stdout, see install_logo), then the
+# controlling terminal. It fails when there is neither. A function of its own so
+# the test suite can stand in for the terminal.
+install_logo_tty_size ()
+{
+    stty size 2>/dev/null <&7 || stty size 2>/dev/null </dev/tty
+}
+
+# install_logo_columns reports the terminal width. COLUMNS is what an
+# interactive shell already holds, and stty covers the case where it is not
+# exported. Anything unreadable reports 0, which prints no artwork.
+install_logo_columns ()
+{
+    logo_cols="${COLUMNS:-}"
+    if [ -z "$logo_cols" ]; then
+        # No stdout test here: this runs inside a command substitution, where
+        # stdout is a pipe. install_logo has already checked its own stdout, and
+        # the terminal itself answers the size query.
+        logo_size="$(install_logo_tty_size)" || logo_size=""
+        logo_cols="${logo_size#* }"
+    fi
+    case "$logo_cols" in
+        ''|*[!0-9]*) logo_cols=0 ;;
+    esac
+    echo "$logo_cols"
+}
+
 opt_requires_arg ()
 {
     pr_err "Option '%s' requires an argument" "$1"
@@ -2490,6 +2546,8 @@ do_install ()
     : "${tag:=latest}"
     : "${no_modify_bashrc:=0}"
     original_operation="$operation"
+
+    install_logo
 
     # OpenRC hosts run the provider as a system service under the service
     # user (default 'urnet'). When root installs with the DEFAULT install
