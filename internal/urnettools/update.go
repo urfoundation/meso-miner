@@ -344,6 +344,7 @@ func cmdUpdate(args []string, force, dryRun bool) error {
 		}
 		if skip {
 			reportAlreadyCurrent(p, cfg)
+			warnLifecycleLinger(p)
 			continue
 		}
 		if err := updateProviderWithRestart(p, cfg, stagedTool); err != nil {
@@ -351,6 +352,8 @@ func cmdUpdate(args []string, force, dryRun bool) error {
 			// than aborting mid-fleet.
 			fmt.Fprintf(os.Stderr, "update %s failed: %v\n", providerLabel(p), err)
 			failures++
+		} else {
+			warnLifecycleLinger(p)
 		}
 	}
 
