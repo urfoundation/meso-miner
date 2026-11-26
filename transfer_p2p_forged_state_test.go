@@ -18,8 +18,9 @@ type forgedState struct {
 
 // runForgedPlaintextPacks sends one plaintext pack from each of `count`
 // distinct forged source ids on a P2P lane bound to a real peer, then a pack
-// from that peer as a barrier. The receive loop handles one lane in order, so
-// once the barrier is delivered every forged pack has been decided. It returns
+// from that peer as a barrier. The receive loop handles one lane in order, but
+// callbacks run independently per sequence. It waits for the barrier and, when
+// count mode admits contracted packs, every forged delivery. It returns
 // the receive sequences and encryption sessions held for the forged ids, and
 // the goroutines started since the client was idle.
 //
@@ -49,12 +50,26 @@ func runForgedPlaintextPacks(t *testing.T, mode string, count int, contracted bo
 		route <- forgeBarrierFrame(t, forgedId, client.ClientId(), "forged")
 	}
 	route <- forgeBarrierFrame(t, peer, client.ClientId(), "barrier")
-	for barrier := false; !barrier; {
+	wantForged := 0
+	if mode == "count" && contracted {
+		wantForged = count
+	}
+	barrier, forgedDelivered := false, 0
+	timer := time.NewTimer(30 * time.Second)
+	defer timer.Stop()
+	for !barrier || forgedDelivered < wantForged {
 		select {
 		case got := <-delivered:
-			barrier = got == "barrier"
-		case <-time.After(30 * time.Second):
-			t.Fatal("barrier not delivered")
+			switch got {
+			case "barrier":
+				barrier = true
+			case "forged":
+				forgedDelivered++
+			default:
+				t.Fatalf("unexpected delivery %q", got)
+			}
+		case <-timer.C:
+			t.Fatalf("deliveries timed out: barrier=%v forged=%d/%d", barrier, forgedDelivered, wantForged)
 		}
 	}
 
